@@ -5,6 +5,7 @@
 
 #include <mpi.h>
 #include <math.h>
+#include <time.h>
 
 #include "vector3d.h"
 #include "savebmp.h"
@@ -50,8 +51,37 @@ unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
 
   return img;
 }
-int main(int argc, char* argv[]){
 
+
+
+
+double* genTestArr(int size, int start) {
+  double* positions = (double*) malloc(sizeof(double) * size);
+  int val = start;
+  for (int i = 0; i < size; ++i) {
+    if (i > 0 && i%2 == 0) {
+      val++;
+    }
+    positions[i] = (double) val;
+  }
+  return positions;
+}
+
+double* genRandomArr(int size, double min, double max) {
+  double* positions = (double*) malloc(sizeof(double) * size);
+  for (int i = 0; i < size; ++i) {
+    positions[i] = (drand48() * (max - min)) + min;
+  }
+  return positions;
+}
+
+void printVecArr(double *arr, int size) {
+  for (int i = 0; i < size; i += 2) {
+    printf("(%.4f,%.4f)\n", arr[i], arr[i+1]);
+  }
+}
+
+int main(int argc, char* argv[]){
   if( argc != 10){
     printf("Usage: %s numParticlesLight numParticleMedium numParticleHeavy numSteps subSteps timeSubStep imageWidth imageHeight imageFilenamePrex\n", argv[0]);
   }
@@ -63,38 +93,54 @@ int main(int argc, char* argv[]){
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &p);
 
-  int nl = atoi(argv[1]);
-  int nm = atoi(argv[2]);
-  int nh = atoi(argv[3]);
-  int numSteps = atoi(argv[4]);
+  int nLight = atoi(argv[1]);
+  int nMedium = atoi(argv[2]);
+  int nHeavy = atoi(argv[3]);
+  int nSteps = atoi(argv[4]);
   int subSteps = atoi(argv[5]);
   double timeSubStep = atof(argv[6]);
   int width = atoi(argv[7]);
   int height = atoi(argv[8]);
-  // int imageFilenamePrefix = argv[9];
 
-  //int width, height;
   double * pos = (double*)malloc(sizeof(double) * 2 * 10);
   for(int i =0; i < 10; i++){
     pos[i*2] = 5;
     pos[i*2+1] = 5;
   }
-  unsigned char* img = createImage(pos, width, height, nl,nm,nh);
+  printf("width: %i, height:%i\n", width, height);
+  unsigned char* img;
 
   //root node stuff goes here
   if(my_rank == 0){
+    // set seed for random number generation
+    srand48(time(NULL));
 
+    int numParticles = nLight + nMedium + nHeavy;
 
-    //almost done, just save the image
-    printf("width: %i, height:%i\n", width, height);
-    saveBMP(argv[9], img, width, height);
+    int size = numParticles * 2;
+    double *positions = genTestArr(size, 0);
+    double *velocities = genTestArr(size, 1);
+
+    printf("Positions:\n");
+    printVecArr(positions, size);
+
+    printf("Velocities:\n");
+    printVecArr(velocities, size);
+
+    unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
+
+    //almost done, just save the img
+    //saveBMP(argv[9], img, width, height);
+
+    //almost done, just save the img
+    // saveBMP(argv[9], img, width, height);
   }
   //all other nodes do this
-  else{
+  else {
 
   }
 
-  free(img);
+  //free(img);
 
   MPI_Finalize();
   return 0;
