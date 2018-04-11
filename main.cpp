@@ -39,6 +39,12 @@ void printVecArr(double *arr, int size) {
   }
 }
 
+void scatter(double* arr, double* l_arr, int l_size) {
+  MPI_Scatter(arr, l_size, MPI_DOUBLE, // send one row, which contains l_size integers
+              l_arr, l_size, MPI_DOUBLE, // receive one row, which contains l_size integers
+              0, MPI_COMM_WORLD); // sent from root node 0
+}
+
 int main(int argc, char* argv[]){
 
   if( argc != 10){
@@ -66,31 +72,47 @@ int main(int argc, char* argv[]){
 
   unsigned char* image;
 
+  int numParticles = 4;//numParticlesLight + numParticleMedium + numParticleHeavy;
+  int size = numParticles * 2;
+  double *positions, *velocities;
+
   //root node stuff goes here
   if(my_rank == 0){
     // set seed for random number generation
     srand48(time(NULL));
 
-    int numParticles = 4;//numParticlesLight + numParticleMedium + numParticleHeavy;
-
     printf("Positions:\n");
-    int size = numParticles * 2;
-    double *positions = genTestArr(size, 0);
+    positions = genTestArr(size, 0);
     // double *positions = genRandomArr(size, 0, 10);
     printVecArr(positions, size);    
 
     printf("Velocities:\n");
-    double *velocities = genTestArr(size, 1);
+    velocities = genTestArr(size, 1);
     // double *velocities = genRandomArr(size, 0, 10);
     printVecArr(velocities, size);
+
+    printf("\n");
 
     //almost done, just save the image
     // saveBMP(argv[9], image, width, height);
   }
-  //all other nodes do this
-  else {
 
-  }
+  int l_size = size / p;
+  double *l_pos = (double*) malloc(sizeof(double) * l_size);
+  double *l_vel = (double*) malloc(sizeof(double) * l_size);
+
+  scatter(positions, l_pos, l_size);
+  scatter(velocities, l_vel, l_size);
+
+  printf("Inside %d of %d\n", my_rank, p);
+  printf("l_size:%d\n", l_size);
+
+  printf("Local Positions\n");
+  printVecArr(l_pos, l_size);
+
+  printf("Local Velocities\n");
+  printVecArr(l_vel, l_size);
+  printf("\n");
 
   // free(image);
 
