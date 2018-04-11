@@ -75,11 +75,13 @@ int main(int argc, char* argv[]){
 
     printf("Positions:\n");
     int size = numParticles * 2;
-    double *positions = genTestArr(size, 0);// genRandomArr(size, 0, 10);
+    double *positions = genTestArr(size, 0);
+    // double *positions = genRandomArr(size, 0, 10);
     printVecArr(positions, size);    
 
     printf("Velocities:\n");
-    double *velocities = genTestArr(size, 1);// genRandomArr(size, 0, 10);
+    double *velocities = genTestArr(size, 1);
+    // double *velocities = genRandomArr(size, 0, 10);
     printVecArr(velocities, size);
 
     //almost done, just save the image
