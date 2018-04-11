@@ -31,7 +31,7 @@ void saveBMP(const char* filename, const unsigned char* result, int w, int h){
 	fwrite(bmpfileheader,1,14,f);
 	fwrite(bmpinfoheader,1,40,f);
 
-	
+
 	img = (unsigned char *)malloc(3*w);
 	assert(img);
 
