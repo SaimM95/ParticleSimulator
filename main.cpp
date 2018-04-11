@@ -130,10 +130,7 @@ int main(int argc, char* argv[]){
     unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
 
     //almost done, just save the img
-    //saveBMP(argv[9], img, width, height);
-
-    //almost done, just save the img
-    // saveBMP(argv[9], img, width, height);
+    saveBMP(argv[9], img, width, height);
   }
   //all other nodes do this
   else {
