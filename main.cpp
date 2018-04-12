@@ -34,6 +34,7 @@ void drawParticle(unsigned char* img, int w,int h,int x, int y, int r, int cr,in
     }
   }
 }
+
 unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
   int size = w*h*3;
   unsigned char* img = (unsigned char *)malloc(sizeof(char)*size);
@@ -57,7 +58,7 @@ unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
 double calcForce(double *p1, double *p2){
   double G = -0.00000000006673;
   double totalMass = p1[2] * p2[2];
-  double dist = p1[1]-p2[1];//sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
+  double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
   return G * totalMass / (dist*dist*dist);
 }
 
@@ -119,16 +120,71 @@ double* genRandomArr(int size, double min, double max) {
   return positions;
 }
 
-void printVecArr(double *arr, int size) {
+void printVecArr(double *arr, int size, int P) {
   for (int i = 0; i < size; i += 2) {
-    printf("(%.4f,%.4f)\n", arr[i], arr[i+1]);
+    printf("%d: (%.4f,%.4f)\n", P, arr[i], arr[i+1]);
   }
 }
 
-void scatter(double* arr, double* l_arr, int l_size) {
-  MPI_Scatter(arr, l_size, MPI_DOUBLE, // send one row, which contains l_size integers
-              l_arr, l_size, MPI_DOUBLE, // receive one row, which contains l_size integers
+void printArr(int *arr, int size) {
+  for (int i = 0; i < size; ++i) {
+    printf("%d,", arr[i]);
+  }
+  printf("\n");
+}
+
+void calcRowDistributions(int rows, int proc, int *rowDistributions) {
+    int rowsLeft = rows;
+    int p;
+
+    for (p = proc; p > 0; p--) {
+        int avgRowBlock = (int) ceil((double)rowsLeft / p); // roundup
+        int procIndex = proc - p;
+        rowDistributions[procIndex] = avgRowBlock;
+        rowsLeft -= avgRowBlock;
+
+        if (rowsLeft <= 0) {
+            break;
+        }
+    }
+}
+
+int* scatter(double *matrix, double *local_matrix, int rows, int cols, int p, int rank) {
+  int *rowDistributions, *counts, *displacements;
+  int local_rows, local_count, i;
+
+  // how many rows per processor
+  rowDistributions = (int*) malloc(sizeof(int) * p);
+  calcRowDistributions(rows, p, rowDistributions);
+
+  if (rank == p-1) {
+    printf("Row Distributions:\n");
+    printArr(rowDistributions, p);
+  }
+
+  // 1D mapping of rowDistributions
+  // e.g. For a 5x4 matrix, {1,1,1,2} => {4,4,4,8}
+  counts = (int*) malloc(sizeof(int) * p);
+  for (i = 0; i < p; ++i) {
+      counts[i] = rowDistributions[i] * cols;
+  }
+
+  // starting indices of each row in the 1D mapping
+  // e.g. For counts = {4,4,4,8} => {0,4,8,12}
+  displacements = (int*) malloc(sizeof(int) * p);
+  displacements[0] = 0;
+  for (i = 1; i < p; ++i) {
+      displacements[i] = displacements[i-1] + counts[i-1];
+  }
+
+  local_rows = rowDistributions[rank];
+  local_count = counts[rank];
+
+  MPI_Scatterv(matrix, counts, displacements, MPI_DOUBLE, // send local_n rows, which contains m vals
+              local_matrix, local_count, MPI_DOUBLE, // receive local_n rows, which contains m vals
               0, MPI_COMM_WORLD); // sent from root node 0
+
+  return rowDistributions;
 }
 
 void sendForces(double *forces, int myRank, int p, int n, int blockSize){
@@ -166,10 +222,10 @@ int main(int argc, char* argv[]){
   int width = atoi(argv[7]);
   int height = atoi(argv[8]);
 
+  char* filePrefix = argv[9];
+  int numParticles = 7;//numParticlesLight + numParticleMedium + numParticleHeavy;
   printf("width: %i, height:%i\n", width, height);
-  //unsigned char* img;
 
-  int numParticles = 4;//nLight + nMedium + nHeavy;
   int size = numParticles * 2;
   double *positions, *velocities;
 
@@ -183,21 +239,33 @@ int main(int argc, char* argv[]){
     velocities = genTestArr(size, 1);
 
     printf("Positions:\n");
-    printVecArr(positions, size);
+    printVecArr(positions, size, my_rank);
 
     printf("Velocities:\n");
-    printVecArr(velocities, size);
+    printVecArr(velocities, size, my_rank);
     printf("\n");
   }
 
 
-  int l_size = size / p;
+  int l_size = (int) ceil((double)numParticles / p) * 2;
+  //int l_size = size / p;
   double *l_pos = (double*) malloc(sizeof(double) * l_size);
   double *l_vel = (double*) malloc(sizeof(double) * l_size);
   double * iterPos = l_pos;
 
-  scatter(positions, l_pos, l_size);
-  scatter(velocities, l_vel, l_size);
+  // FOR DEBUGGING ONLY
+  for (int i = 0; i < l_size; ++i) {
+    l_pos[i] = -1;
+    l_vel[i] = -1;
+  }
+
+
+  int *rowDistributions;
+  rowDistributions = scatter(positions, l_pos, numParticles, 2, p, my_rank);
+  // following call should have same result as call to scatter above
+  scatter(velocities, l_vel, numParticles, 2, p, my_rank);
+
+  int l_size_actual = rowDistributions[my_rank] * 2;
 
   // init stuff
   //int blockSize = ceil(numParticles/(float)p);
