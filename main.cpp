@@ -57,13 +57,16 @@ unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
  *
  */
 void calculate(double *start_pos, double * local_pos, double *forces){
-
+  ///
 }
 
 /* calcualtes the force particle one exerts on particle 2
  */
-double f(int m, double *p1, double *p2){
-  return 0.0f;
+double f(double m1, double m2, double *p1, double *p2){
+  double G = -0.00000000006673;
+  double totalMass = m1 * m2;
+  double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
+  return G * totalMass / (dist*dist*dist);
 }
 
 // updates the positions of the particles
@@ -104,6 +107,9 @@ void scatter(double* arr, double* l_arr, int l_size) {
               0, MPI_COMM_WORLD); // sent from root node 0
 }
 
+void sendForces(double *forces, int myRank, int p){
+
+}
 int main(int argc, char* argv[]){
   if( argc != 10){
     printf("Usage: %s numParticlesLight numParticleMedium numParticleHeavy numSteps subSteps timeSubStep imageWidth imageHeight imageFilenamePrex\n", argv[0]);
@@ -158,12 +164,22 @@ int main(int argc, char* argv[]){
   scatter(positions, l_pos, l_size);
   scatter(velocities, l_vel, l_size);
 
+  // init stuff
+  int blockSize = ceil(numParticles/p);
+  double * forces = (double *)malloc(sizeof(double) * numParticles * blockSize);
+
   for(int step = 0; step < nSteps; step++){
     for(int substep = 0; substep < subSteps; substep++){
       // recieve
-      //calculate();
+
+      double * localPos;
+      calculate(positions, localPos, forces);
+
       // send
     }
+
+    sendForces(forces, my_rank, p);
+
     if(my_rank == 0){
       //unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
       //saveBMP(argv[9], img, width, height);
