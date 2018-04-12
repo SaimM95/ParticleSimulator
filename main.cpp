@@ -99,14 +99,14 @@ int main(int argc, char* argv[]){
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &p);
 
-  int nLight = atoi(argv[1]);
-  int nMedium = atoi(argv[2]);
-  int nHeavy = atoi(argv[3]);
-  int nSteps = atoi(argv[4]);
-  int subSteps = atoi(argv[5]);
-  double timeSubStep = atof(argv[6]);
-  int width = atoi(argv[7]);
-  int height = atoi(argv[8]);
+  int nLight = 2;//atoi(argv[1]);
+  int nMedium = 2;//atoi(argv[2]);
+  int nHeavy = 2;//atoi(argv[3]);
+  // int nSteps = atoi(argv[4]);
+  // int subSteps = atoi(argv[5]);
+  // double timeSubStep = atof(argv[6]);
+  int width = 256;//atoi(argv[7]);
+  int height = 256;//atoi(argv[8]);
 
   double * pos = (double*)malloc(sizeof(double) * 2 * 10);
   for(int i =0; i < 10; i++){
@@ -125,17 +125,16 @@ int main(int argc, char* argv[]){
     // set seed for random number generation
     srand48(time(NULL));
 
-    int numParticles = nLight + nMedium + nHeavy;
-
     int size = numParticles * 2;
-    double *positions = genTestArr(size, 0);
-    double *velocities = genTestArr(size, 1);
+    positions = genTestArr(size, 0);
+    velocities = genTestArr(size, 1);
 
     printf("Positions:\n");
     printVecArr(positions, size);
 
     printf("Velocities:\n");
     printVecArr(velocities, size);
+    printf("\n");
 
     unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
 
@@ -160,7 +159,7 @@ int main(int argc, char* argv[]){
   printVecArr(l_vel, l_size);
   printf("\n");
 
-  free(img);
+  // free(img);
 
   MPI_Finalize();
   return 0;
