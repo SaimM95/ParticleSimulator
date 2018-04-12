@@ -99,14 +99,15 @@ int main(int argc, char* argv[]){
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &p);
 
-  int nLight = 2;//atoi(argv[1]);
-  int nMedium = 2;//atoi(argv[2]);
-  int nHeavy = 2;//atoi(argv[3]);
-  // int nSteps = atoi(argv[4]);
-  // int subSteps = atoi(argv[5]);
-  // double timeSubStep = atof(argv[6]);
-  int width = 256;//atoi(argv[7]);
-  int height = 256;//atoi(argv[8]);
+  int nLight = atoi(argv[1]);
+  int nMedium = atoi(argv[2]);
+  int nHeavy = atoi(argv[3]);
+  int nSteps = atoi(argv[4]);
+  int subSteps = atoi(argv[5]);
+  double timeSubStep = atof(argv[6]);
+  int width = atoi(argv[7]);
+  int height = atoi(argv[8]);
+  char* filePrefix = argv[9];
 
   double * pos = (double*)malloc(sizeof(double) * 2 * 10);
   for(int i =0; i < 10; i++){
@@ -139,7 +140,7 @@ int main(int argc, char* argv[]){
     unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
 
     //almost done, just save the img
-    saveBMP(argv[9], img, width, height);
+    saveBMP(filePrefix, img, width, height);
   }
 
   int l_size = size / p;
