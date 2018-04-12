@@ -53,6 +53,23 @@ unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
 }
 
 
+/* calls the f function on the amount of time this process needs
+ *
+ */
+void calculate(double *start_pos, double * local_pos, double *forces){
+
+}
+
+/* calcualtes the force particle one exerts on particle 2
+ */
+double f(int m, double *p1, double *p2){
+  return 0.0f;
+}
+
+// updates the positions of the particles
+void updatePos(double *forces, double *pos, double *vel, int w, int h){
+
+}
 
 
 double* genTestArr(int size, int start) {
@@ -99,24 +116,19 @@ int main(int argc, char* argv[]){
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &p);
 
-  int nLight = 2;//atoi(argv[1]);
-  int nMedium = 2;//atoi(argv[2]);
-  int nHeavy = 2;//atoi(argv[3]);
-  // int nSteps = atoi(argv[4]);
-  // int subSteps = atoi(argv[5]);
-  // double timeSubStep = atof(argv[6]);
-  int width = 256;//atoi(argv[7]);
-  int height = 256;//atoi(argv[8]);
+  int nLight = atoi(argv[1]);
+  int nMedium = atoi(argv[2]);
+  int nHeavy = atoi(argv[3]);
+  int nSteps = atoi(argv[4]);
+  int subSteps = atoi(argv[5]);
+  double timeSubStep = atof(argv[6]);
+  int width = atoi(argv[7]);
+  int height = atoi(argv[8]);
 
-  double * pos = (double*)malloc(sizeof(double) * 2 * 10);
-  for(int i =0; i < 10; i++){
-    pos[i*2] = 5;
-    pos[i*2+1] = 5;
-  }
   printf("width: %i, height:%i\n", width, height);
   unsigned char* img;
 
-  int numParticles = 4;//numParticlesLight + numParticleMedium + numParticleHeavy;
+  int numParticles = 4;//nLight + nMedium + nHeavy;
   int size = numParticles * 2;
   double *positions, *velocities;
 
@@ -136,11 +148,8 @@ int main(int argc, char* argv[]){
     printVecArr(velocities, size);
     printf("\n");
 
-    unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
-
-    //almost done, just save the img
-    saveBMP(argv[9], img, width, height);
   }
+
 
   int l_size = size / p;
   double *l_pos = (double*) malloc(sizeof(double) * l_size);
@@ -149,18 +158,20 @@ int main(int argc, char* argv[]){
   scatter(positions, l_pos, l_size);
   scatter(velocities, l_vel, l_size);
 
-  printf("Inside %d of %d\n", my_rank, p);
-  printf("l_size:%d\n", l_size);
-
-  printf("Local Positions\n");
-  printVecArr(l_pos, l_size);
-
-  printf("Local Velocities\n");
-  printVecArr(l_vel, l_size);
-  printf("\n");
-
-  // free(img);
+  for(int step = 0; step < nSteps; step++){
+    for(int substep = 0; substep < subSteps; substep++){
+      // recieve
+      //calculate();
+      // send
+    }
+    if(my_rank == 0){
+      //unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
+      //saveBMP(argv[9], img, width, height);
+      //free(img);
+    }
+  }
 
   MPI_Finalize();
   return 0;
 }
+
