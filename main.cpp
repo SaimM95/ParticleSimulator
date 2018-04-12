@@ -52,26 +52,50 @@ unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
   return img;
 }
 
+/* calcualtes the force particle one exerts on particle 2
+ */
+double calcForce(double *p1, double *p2){
+  double G = -0.00000000006673;
+  double totalMass = p1[2] * p2[2];
+  double dist = p1[1]-p2[1];//sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
+  return G * totalMass / (dist*dist*dist);
+}
 
 /* calls the f function on the amount of time this process needs
  *
  */
-void calculate(double *start_pos, double * local_pos, double *forces){
-  ///
+void calculate(double *startPos, double * localPos, double *forces, int numPar){
+  for(int i =0; i < numPar; i++){
+    for(int j =i; j < numPar; j++){
+      double * p1 = &startPos[i*3];
+      double * p2 = &localPos[j*3];
+      double f = calcForce(p1,p2);
+      forces[(i * numPar + j)*2] = f * (p1[0] - p2[0]);
+      forces[(i * numPar + j)*2+1] = f * (p1[1] - p2[1]);
+    }
+  }
 }
 
-/* calcualtes the force particle one exerts on particle 2
- */
-double f(double m1, double m2, double *p1, double *p2){
-  double G = -0.00000000006673;
-  double totalMass = m1 * m2;
-  double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
-  return G * totalMass / (dist*dist*dist);
-}
 
 // updates the positions of the particles
-void updatePos(double *forces, double *pos, double *vel, int w, int h){
+void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, int blockSize){
+  // update velocities
+  for(int p = 0; p < blockSize; p++){
+    double totalForceX = 0;
+    double totalForceY = 0;
+    for(int i =0; i < n; i++){
+      totalForceX += forces[(i + w*p)*2 + 0];
+      totalForceY += forces[(i + w*p)*2 + 1];
+    }
+    vel[p*2] += totalForceX;
+    vel[p*2+1] += totalForceY;
+  }
 
+  // update position
+  for(int i = 0; i < blockSize; i++){
+    pos[i*3] += vel[i*2];
+    pos[i*3+1] += vel[i*2+1];
+  }
 }
 
 
@@ -107,8 +131,19 @@ void scatter(double* arr, double* l_arr, int l_size) {
               0, MPI_COMM_WORLD); // sent from root node 0
 }
 
-void sendForces(double *forces, int myRank, int p){
-
+void sendForces(double *forces, int myRank, int p, int n, int blockSize){
+  // TODO
+  //c / size;
+  for(int r =0; r < blockSize; r++){
+    for(int c =r+1; c < n; c++){
+      //MPI_Recv(iterPos, numParticles*blockSize, MPI_DOUBLE, recIndex, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      int size = c / p;
+      int rem = n - (n/p) * p;
+      int sendIndex= 1;
+      MPI_Send(&forces[r*n + c], 2, MPI_DOUBLE, sendIndex, 2, MPI_COMM_WORLD);
+      //MPI_Recv(&forces[r*numParticles + c], 1, MPI_DOUBLE, c, 2, MPI_COMM_WORLD);
+    }
+  }
 }
 int main(int argc, char* argv[]){
   if( argc != 10){
@@ -132,7 +167,7 @@ int main(int argc, char* argv[]){
   int height = atoi(argv[8]);
 
   printf("width: %i, height:%i\n", width, height);
-  unsigned char* img;
+  //unsigned char* img;
 
   int numParticles = 4;//nLight + nMedium + nHeavy;
   int size = numParticles * 2;
@@ -153,34 +188,47 @@ int main(int argc, char* argv[]){
     printf("Velocities:\n");
     printVecArr(velocities, size);
     printf("\n");
-
   }
 
 
   int l_size = size / p;
   double *l_pos = (double*) malloc(sizeof(double) * l_size);
   double *l_vel = (double*) malloc(sizeof(double) * l_size);
+  double * iterPos = l_pos;
 
   scatter(positions, l_pos, l_size);
   scatter(velocities, l_vel, l_size);
 
   // init stuff
-  int blockSize = ceil(numParticles/p);
-  double * forces = (double *)malloc(sizeof(double) * numParticles * blockSize);
+  //int blockSize = ceil(numParticles/(float)p);
+  int maxBlockSize = numParticles/p+1;
+  double * forces = (double *)malloc(sizeof(double) * numParticles * maxBlockSize*2);
+  int rem = (numParticles - (numParticles/p)*p);
+  int blockSize = numParticles/p + ((p < rem)?1:0);
+  int recIndex = (my_rank-1+p) % p;
+  int sendIndex = (my_rank+1) % p;
 
   for(int step = 0; step < nSteps; step++){
     for(int substep = 0; substep < subSteps; substep++){
-      // recieve
+      for(int iter = 0; iter < p; iter++){
+        // recieve
+        if(iter !=0){
+          MPI_Recv(iterPos, numParticles*blockSize, MPI_DOUBLE, recIndex, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
 
-      double * localPos;
-      calculate(positions, localPos, forces);
+        calculate(l_pos, iterPos, forces, numParticles);
 
-      // send
+        // send
+        if(iter != p-1){
+          MPI_Send(iterPos, numParticles*blockSize, MPI_DOUBLE, sendIndex, 1, MPI_COMM_WORLD);
+        }
+      }
+      sendForces(forces, my_rank, p, numParticles, blockSize);
+      updatePos(forces, l_pos, l_vel, width, height, numParticles, blockSize);
     }
 
-    sendForces(forces, my_rank, p);
-
     if(my_rank == 0){
+      // send all the positions to process 0, do a gather
       //unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
       //saveBMP(argv[9], img, width, height);
       //free(img);
