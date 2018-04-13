@@ -14,23 +14,22 @@
 #define epsilon 0.000000000000000222
 
 
-void drawParticle(unsigned char* img, int w,int h,int x, int y, int r, int cr,int cg, int cb){
+void drawParticle(unsigned char* img, int w,int h,int x, int y, int r, vec3 col){
   int minX = x - r;
   int maxX = x + r;
-  printf("going to draw particle\n");
-  for(int x = minX; x < maxX; x++){
+  for(int cx = minX; cx < maxX; cx++){
     if(x < 0) continue;
     if(x >= w) break;
-    //int minY = y - sqrt(r*r - x*x);
-    //int maxY = y + sqrt(z);
-    int minY = y - r;
-    int maxY = y + r;
+    int diff = r*r - (cx-x)*(cx-x);
+    int val = (int)sqrt(abs(diff));
+    int minY = y - val;
+    int maxY = y + val;
     for(int y = minY; y < maxY; y++){
       if(y < 0) continue;
       if(y >= h) break;
-      img[(x + y*w)*3] = cr;
-      img[(x + y*w)*3+1] = cg;
-      img[(x + y*w)*3+2] = cb;
+      img[(cx + y*w)*3] = col.x*255;
+      img[(cx + y*w)*3+1] = col.y*255;
+      img[(cx + y*w)*3+2] = col.z*255;
     }
   }
 }
@@ -43,11 +42,14 @@ unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
   }
 
   int radius = 2;
-  for(int i =0; i < nl; i++){
+  vec3 col = colourLight;
+  int numPart = nl+nm+nh;
+  for(int i =0; i < numPart; i++){
+    if(i >= nm) col = colourHeavy;
+    else if(i >= nl) col = colourMedium;
     int x = (int)pos[i*2];
     int y = (int)pos[i*2+1];
-    drawParticle(img,w,h,x,y,radius,255,255,255);
-    printf("setting value at (%i,%i) to 255\n", x,y);
+    drawParticle(img,w,h,x,y,radius,col);
   }
 
   return img;
@@ -60,19 +62,24 @@ double calcForce(double *p1, double *p2){
   double totalMass = p1[2] * p2[2];
   double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
   return G * totalMass / (dist*dist*dist);
+  //return (dist*dist*dist);
 }
 
 /* calls the f function on the amount of time this process needs
  *
  */
-void calculate(double *startPos, double * localPos, double *forces, int numPar){
+void calculate(double *startPos, double * localPos, double *forces, int numPar, int rank){
+  //printf("%d: starting calculate numpar:%d\n", rank, numPar);
   for(int i =0; i < numPar; i++){
     for(int j =i; j < numPar; j++){
       double * p1 = &startPos[i*3];
       double * p2 = &localPos[j*3];
+      if(p1 == p2) continue;
+      //printf("%d: p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
       double f = calcForce(p1,p2);
       forces[(i * numPar + j)*2] = f * (p1[0] - p2[0]);
       forces[(i * numPar + j)*2+1] = f * (p1[1] - p2[1]);
+      //printf("%d: got the force f:%f\n", rank, f);
     }
   }
 }
@@ -100,11 +107,11 @@ void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, in
 }
 
 
-double* genTestArr(int size, int start) {
+double* genTestArr(int size, int start, int width) {
   double* positions = (double*) malloc(sizeof(double) * size);
   int val = start;
   for (int i = 0; i < size; ++i) {
-    if (i > 0 && i%2 == 0) {
+    if (i > 0 && i%width == 0) {
       val++;
     }
     positions[i] = (double) val;
@@ -120,9 +127,13 @@ double* genRandomArr(int size, double min, double max) {
   return positions;
 }
 
-void printVecArr(double *arr, int size, int P) {
-  for (int i = 0; i < size; i += 2) {
-    printf("%d: (%.4f,%.4f)\n", P, arr[i], arr[i+1]);
+void printVecArr(double *arr, int size, int P, int width) {
+  for (int i = 0; i < size; i += width) {
+    printf("%d: (", P);
+    for(int j=0; j < width; j++){
+      printf("%.4f,", arr[i+j]);
+    }
+    printf(")\n");
   }
 }
 
@@ -188,6 +199,7 @@ int* scatter(double *matrix, double *local_matrix, int rows, int cols, int p, in
 }
 
 void sendForces(double *forces, int myRank, int p, int n, int blockSize){
+  /*
   // TODO
   //c / size;
   for(int r =0; r < blockSize; r++){
@@ -200,6 +212,21 @@ void sendForces(double *forces, int myRank, int p, int n, int blockSize){
       //MPI_Recv(&forces[r*numParticles + c], 1, MPI_DOUBLE, c, 2, MPI_COMM_WORLD);
     }
   }
+  */
+}
+
+void saveImage(char* filePrefix, int step, double* pos, int width, int height, int nLight, int nMedium, int nHeavy){
+  char * fileName;
+  fileName = (char*)malloc(strlen(filePrefix)+9+1);
+  strcat(fileName, filePrefix);
+
+  char snum[6];
+  sprintf(snum, "%05d", step);
+  strcat(fileName, snum);
+  strcat(fileName, ".bmp");
+  unsigned char* img = createImage(pos, width, height,1,1,0);
+  saveBMP(fileName, img, width, height);
+  free(img);
 }
 int main(int argc, char* argv[]){
   if( argc != 10){
@@ -226,7 +253,6 @@ int main(int argc, char* argv[]){
   int numParticles = 7;//numParticlesLight + numParticleMedium + numParticleHeavy;
   printf("width: %i, height:%i\n", width, height);
 
-  int size = numParticles * 2;
   double *positions, *velocities;
 
   //root node stuff goes here
@@ -234,24 +260,25 @@ int main(int argc, char* argv[]){
     // set seed for random number generation
     srand48(time(NULL));
 
-    int size = numParticles * 2;
-    positions = genTestArr(size, 0);
-    velocities = genTestArr(size, 1);
+    positions = genTestArr(numParticles*3, 0,3);
+    velocities = genTestArr(numParticles*2, 1,2);
 
     printf("Positions:\n");
-    printVecArr(positions, size, my_rank);
+    printVecArr(positions, numParticles*3, my_rank,3);
 
-    printf("Velocities:\n");
-    printVecArr(velocities, size, my_rank);
-    printf("\n");
+    // printf("Velocities:\n");
+    // printVecArr(velocities, size, my_rank, 2);
+    // printf("\n");
   }
 
 
-  int l_size = (int) ceil((double)numParticles / p) * 2;
+  int l_size = (int) ceil((double)numParticles / p) * 3;
   //int l_size = size / p;
   double *l_pos = (double*) malloc(sizeof(double) * l_size);
   double *l_vel = (double*) malloc(sizeof(double) * l_size);
   double * iterPos = l_pos;
+  double * emptArr = (double *)malloc(sizeof(double) * 3*numParticles);
+  printf("&lpos:%p, iterpos:%p\n", l_pos, iterPos);
 
   // FOR DEBUGGING ONLY
   for (int i = 0; i < l_size; ++i) {
@@ -261,7 +288,7 @@ int main(int argc, char* argv[]){
 
 
   int *rowDistributions;
-  rowDistributions = scatter(positions, l_pos, numParticles, 2, p, my_rank);
+  rowDistributions = scatter(positions, l_pos, numParticles, 3, p, my_rank);
   // following call should have same result as call to scatter above
   scatter(velocities, l_vel, numParticles, 2, p, my_rank);
 
@@ -270,36 +297,68 @@ int main(int argc, char* argv[]){
   // init stuff
   //int blockSize = ceil(numParticles/(float)p);
   int maxBlockSize = numParticles/p+1;
+  printf("numParticles:%i, maxBlockSize:%i\n", numParticles, maxBlockSize);
   double * forces = (double *)malloc(sizeof(double) * numParticles * maxBlockSize*2);
-  int rem = (numParticles - (numParticles/p)*p);
-  int blockSize = numParticles/p + ((p < rem)?1:0);
+  int blockSize = rowDistributions[my_rank];
   int recIndex = (my_rank-1+p) % p;
   int sendIndex = (my_rank+1) % p;
 
+  printf("%d: l_pos is \n", my_rank);
+  printVecArr(l_pos, blockSize*3, my_rank, 3);
+  printf("going to calculate for initial position\n");
+
+  /*
+  if(my_rank == 0){
+    double * testPos = (double*)malloc(sizeof(double)*3*2);
+    testPos[0] = 100;
+    testPos[1] = 100;
+    testPos[2] = 15;
+    testPos[3] = 300;
+    testPos[4] = 300;
+    testPos[5] = 15;
+
+    saveImage(filePrefix,230,testPos, width, height, 1,1,0);
+  }*/
+
   for(int step = 0; step < nSteps; step++){
+    /*
     for(int substep = 0; substep < subSteps; substep++){
+      iterPos = l_pos;
       for(int iter = 0; iter < p; iter++){
         // recieve
-        if(iter !=0){
-          MPI_Recv(iterPos, numParticles*blockSize, MPI_DOUBLE, recIndex, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        if(iter !=0 && recIndex != my_rank){
+          printf("%d: waiting to recieve from: %d\n", my_rank, recIndex);
+          iterPos = emptArr;
+          MPI_Recv(iterPos, numParticles*maxBlockSize, MPI_DOUBLE, recIndex, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          printf("%d: recieved the array\n", my_rank);
+          printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
         }
 
-        calculate(l_pos, iterPos, forces, numParticles);
+        printf("%d: going to process\n", my_rank);
+        printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
+        calculate(l_pos, iterPos, forces, rowDistributions[my_rank], my_rank);
 
         // send
-        if(iter != p-1){
-          MPI_Send(iterPos, numParticles*blockSize, MPI_DOUBLE, sendIndex, 1, MPI_COMM_WORLD);
+        if(iter != p-1 && sendIndex != my_rank){
+          printf("%d: going to send to: %d\n", my_rank, sendIndex);
+          printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
+          MPI_Send(iterPos, numParticles*maxBlockSize, MPI_DOUBLE, sendIndex, 1, MPI_COMM_WORLD);
         }
       }
       sendForces(forces, my_rank, p, numParticles, blockSize);
       updatePos(forces, l_pos, l_vel, width, height, numParticles, blockSize);
-    }
+      printf("%d: done iteration\n", my_rank);
+      printf("%d: printing l_pos\n", my_rank);
+      printVecArr(l_pos, maxBlockSize*3, my_rank, 3);
+    }*/
 
+    const int a = numParticles * 3;
+    MPI_Gatherv(l_pos, rowDistributions[my_rank]*3, MPI_DOUBLE,
+      positions, &a, MPI_DOUBLE,
+      0, MPI_COMM_WORLD);
     if(my_rank == 0){
       // send all the positions to process 0, do a gather
-      //unsigned char* img = createImage(pos, width, height, nLight,nMedium,nHeavy);
-      //saveBMP(argv[9], img, width, height);
-      //free(img);
+      saveImage(filePrefix, step, positions, width, height, nLight,nMedium,nHeavy);
     }
   }
 
