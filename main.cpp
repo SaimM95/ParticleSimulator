@@ -119,12 +119,43 @@ double* genTestArr(int size, int start, int width) {
   return positions;
 }
 
-double* genRandomArr(int size, double min, double max) {
-  double* positions = (double*) malloc(sizeof(double) * size);
-  for (int i = 0; i < size; ++i) {
-    positions[i] = (drand48() * (max - min)) + min;
+double* genRandomPos(int width, int height, int nl, int nm, int nh) {
+  int n = nl+nm+nh;
+  double* positions = (double*) malloc(sizeof(double) * n *3);
+  int max = massLightMax;
+  int min = massLightMin;
+  for (int i = 0; i < n; i+= 3) {
+    if(i ==nl){
+      max = massMediumMax;
+      min = massMediumMin;
+    }else if(i == nm){
+      max = massHeavyMax;
+      min = massHeavyMin;
+    }
+    positions[i] = (drand48()*width);
+    positions[i+1] = (drand48()*height);
+    positions[i+2] = (drand48()*(max-min)) + min;
   }
   return positions;
+}
+
+double* genRandomVel(int nl, int nm, int nh) {
+  int n = nl+nm+nh;
+  double* vel = (double*) malloc(sizeof(double) * n *2);
+  int max = velocityLightMin;
+  int min = velocityLightMax;
+  for (int i = 0; i < n; i+= 2) {
+    if(i ==nl){
+      max = velocityMediumMax;
+      min = velocityMediumMin;
+    }else if(i == nm){
+      max = velocityHeavyMax;
+      min = velocityHeavyMin;
+    }
+    vel[i] = (drand48()*(max-min)) + min;
+    vel[i+1] = (drand48()*(max-min)) + min;
+  }
+  return vel;
 }
 
 void printVecArr(double *arr, int size, int P, int width) {
@@ -237,11 +268,11 @@ void sendForces(double *forces, int myRank, int p, int n, int blockSize){
 }
 
 void saveImage(char* filePrefix, int step, double* pos, int width, int height, int nLight, int nMedium, int nHeavy){
-  char * fileName;
-  fileName = (char*)malloc(strlen(filePrefix)+9+1);
-  strcat(fileName, filePrefix);
+  char * fileName = (char *)malloc(strlen(filePrefix));
+  strcpy(fileName, filePrefix);
+  printf("file prefix is: %s, fileName:%s\n", filePrefix, fileName);
 
-  char snum[6];
+  char snum[5];
   sprintf(snum, "%05d", step);
   strcat(fileName, snum);
   strcat(fileName, ".bmp");
@@ -271,7 +302,7 @@ int main(int argc, char* argv[]){
   int height = atoi(argv[8]);
 
   char* filePrefix = argv[9];
-  int numParticles = 7;//numParticlesLight + numParticleMedium + numParticleHeavy;
+  int numParticles = nLight + nMedium + nHeavy;
   printf("width: %i, height:%i\n", width, height);
 
   double *positions, *velocities;
@@ -282,15 +313,17 @@ int main(int argc, char* argv[]){
     // set seed for random number generation
     srand48(time(NULL));
 
-    positions = genTestArr(numParticles*3, 0,3);
-    velocities = genTestArr(numParticles*2, 1,2);
+    positions = genRandomPos(width, height, nLight, nMedium, nHeavy);
+    velocities = genRandomVel(nLight, nMedium, nHeavy);
+    //positions = genTestArr(numParticles*3, 0,3);
+    //velocities = genTestArr(numParticles*2, 1,2);
 
     printf("Positions:\n");
     printVecArr(positions, numParticles*3, my_rank,3);
 
-    // printf("Velocities:\n");
-    // printVecArr(velocities, size, my_rank, 2);
-    // printf("\n");
+    printf("Velocities:\n");
+    printVecArr(velocities, numParticles*2, my_rank, 2);
+    printf("\n");
   }
 
   int l_size = (int) ceil((double)numParticles / p) * 3;
@@ -306,7 +339,6 @@ int main(int argc, char* argv[]){
     l_pos[i] = -1;
     l_vel[i] = -1;
   }
-
 
   int *rowDistributions;
   rowDistributions = scatter(positions, l_pos, numParticles, 3, p, my_rank);
