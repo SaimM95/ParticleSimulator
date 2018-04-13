@@ -162,7 +162,7 @@ void calcRowDistributions(int rows, int proc, int *rowDistributions) {
 
 int* scatter(double *matrix, double *local_matrix, int rows, int cols, int p, int rank) {
   int *rowDistributions, *counts, *displacements;
-  int local_rows, local_count, i;
+  int local_count, i;
 
   // how many rows per processor
   rowDistributions = (int*) malloc(sizeof(int) * p);
@@ -188,7 +188,6 @@ int* scatter(double *matrix, double *local_matrix, int rows, int cols, int p, in
       displacements[i] = displacements[i-1] + counts[i-1];
   }
 
-  local_rows = rowDistributions[rank];
   local_count = counts[rank];
 
   MPI_Scatterv(matrix, counts, displacements, MPI_DOUBLE, // send local_n rows, which contains m vals
@@ -196,6 +195,28 @@ int* scatter(double *matrix, double *local_matrix, int rows, int cols, int p, in
               0, MPI_COMM_WORLD); // sent from root node 0
 
   return rowDistributions;
+}
+void gather(double *pos, double *pos_loc, int rows, int cols, int p, int rank){
+  int *rowDistributions, *counts, *displacements;
+  int i;
+
+  rowDistributions = (int*) malloc(sizeof(int) * p);
+  calcRowDistributions(rows, p, rowDistributions);
+
+  counts = (int*) malloc(sizeof(int) * p);
+  for (i = 0; i < p; ++i) {
+      counts[i] = rowDistributions[i] * cols;
+  }
+
+  displacements = (int*) malloc(sizeof(int) * p);
+  displacements[0] = 0;
+  for (i = 1; i < p; ++i) {
+      displacements[i] = displacements[i-1] + counts[i-1];
+  }
+
+  MPI_Gatherv(pos_loc, rowDistributions[rank]*3, MPI_DOUBLE,
+    pos, counts, displacements,
+    MPI_DOUBLE, 0, MPI_COMM_WORLD);
 }
 
 void sendForces(double *forces, int myRank, int p, int n, int blockSize){
@@ -254,6 +275,7 @@ int main(int argc, char* argv[]){
   printf("width: %i, height:%i\n", width, height);
 
   double *positions, *velocities;
+  positions = (double*)malloc(sizeof(double)*3*numParticles);
 
   //root node stuff goes here
   if(my_rank == 0){
@@ -305,23 +327,8 @@ int main(int argc, char* argv[]){
 
   printf("%d: l_pos is \n", my_rank);
   printVecArr(l_pos, blockSize*3, my_rank, 3);
-  printf("going to calculate for initial position\n");
-
-  /*
-  if(my_rank == 0){
-    double * testPos = (double*)malloc(sizeof(double)*3*2);
-    testPos[0] = 100;
-    testPos[1] = 100;
-    testPos[2] = 15;
-    testPos[3] = 300;
-    testPos[4] = 300;
-    testPos[5] = 15;
-
-    saveImage(filePrefix,230,testPos, width, height, 1,1,0);
-  }*/
 
   for(int step = 0; step < nSteps; step++){
-    /*
     for(int substep = 0; substep < subSteps; substep++){
       iterPos = l_pos;
       for(int iter = 0; iter < p; iter++){
@@ -350,12 +357,9 @@ int main(int argc, char* argv[]){
       printf("%d: done iteration\n", my_rank);
       printf("%d: printing l_pos\n", my_rank);
       printVecArr(l_pos, maxBlockSize*3, my_rank, 3);
-    }*/
+    }
 
-    const int a = numParticles * 3;
-    MPI_Gatherv(l_pos, rowDistributions[my_rank]*3, MPI_DOUBLE,
-      positions, &a, MPI_DOUBLE,
-      0, MPI_COMM_WORLD);
+    gather(positions, l_pos, numParticles, 3, p, my_rank);
     if(my_rank == 0){
       // send all the positions to process 0, do a gather
       saveImage(filePrefix, step, positions, width, height, nLight,nMedium,nHeavy);
