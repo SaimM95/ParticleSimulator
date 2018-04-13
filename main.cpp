@@ -293,7 +293,6 @@ int main(int argc, char* argv[]){
     // printf("\n");
   }
 
-
   int l_size = (int) ceil((double)numParticles / p) * 3;
   //int l_size = size / p;
   double *l_pos = (double*) malloc(sizeof(double) * l_size);
@@ -314,10 +313,7 @@ int main(int argc, char* argv[]){
   // following call should have same result as call to scatter above
   scatter(velocities, l_vel, numParticles, 2, p, my_rank);
 
-  int l_size_actual = rowDistributions[my_rank] * 2;
-
   // init stuff
-  //int blockSize = ceil(numParticles/(float)p);
   int maxBlockSize = numParticles/p+1;
   printf("numParticles:%i, maxBlockSize:%i\n", numParticles, maxBlockSize);
   double * forces = (double *)malloc(sizeof(double) * numParticles * maxBlockSize*2);
