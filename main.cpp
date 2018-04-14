@@ -156,8 +156,8 @@ double* genRandomVel(int nl, int nm, int nh) {
     vel[i*2+1] = (drand48()*(max-min)) + min;
 
     // velocity can be negative
-    vel[i*2] = ((drand48()*-2)+1) * vel[i*2];
-    vel[i*2+1] = ((drand48()*-2) +1)* vel[i*2+1];
+    if(drand48()*2 < 1) vel[i*2] = vel[i*2]*-1;
+    if(drand48()*2 < 1) vel[i*2+1] = vel[i*2+1]*-1;
   }
   return vel;
 }
@@ -350,6 +350,7 @@ int main(int argc, char* argv[]){
   int numParticles = nLight + nMedium + nHeavy;
   printf("width: %i, height:%i\n", width, height);
 
+
   double *positions, *velocities;
   positions = (double*)malloc(sizeof(double)*3*numParticles);
 
@@ -364,27 +365,23 @@ int main(int argc, char* argv[]){
     //positions = genTestArr(numParticles*3, 0,3);
     //velocities = genTestArr(numParticles*2, 1,2);
 
-    printf("all Positions:\n");
-    printVecArr(positions, numParticles*3, my_rank,3);
+    // printf("all Positions:\n");
+    // printVecArr(positions, numParticles*3, my_rank,3);
 
-    printf("Velocities:\n");
-    printVecArr(velocities, numParticles*2, my_rank, 2);
+    // printf("Velocities:\n");
+    // printVecArr(velocities, numParticles*2, my_rank, 2);
     //printf("\n");
   }
 
-  int l_size = (int) ceil((double)numParticles / p) * 3;
+  int maxBlockSize = (int) ceil(numParticles / (double)p);
   //int l_size = size / p;
-  double *l_pos = (double*) malloc(sizeof(double) * l_size);
-  double *l_vel = (double*) malloc(sizeof(double) * l_size);
+  /* double *l_pos = (double*) malloc(sizeof(double) * l_size); */
+  /* double *l_vel = (double*) malloc(sizeof(double) * l_size); */
+  double *l_pos = (double*) malloc(sizeof(double) * maxBlockSize * 3);
+  double *l_vel = (double*) malloc(sizeof(double) * maxBlockSize * 2);
   double * iterPos = l_pos;
-  double * emptArr = (double *)malloc(sizeof(double) * 3*numParticles);
-  printf("&lpos:%p, iterpos:%p\n", l_pos, iterPos);
-
-  // FOR DEBUGGING ONLY
-  for (int i = 0; i < l_size; ++i) {
-    l_pos[i] = -1;
-    l_vel[i] = -1;
-  }
+  double * emptArr = (double *)malloc(sizeof(double) * maxBlockSize * 3);
+  printf("&lpos:%p, iterpos:%p blockSize:%i\n", l_pos, iterPos, maxBlockSize);
 
   int *rowDistributions;
   rowDistributions = scatter(positions, l_pos, numParticles, 3, p, my_rank);
@@ -392,7 +389,7 @@ int main(int argc, char* argv[]){
   scatter(velocities, l_vel, numParticles, 2, p, my_rank);
 
   // init stuff
-  int maxBlockSize = numParticles/p+1;
+  //int maxBlockSize = numParticles/p+1;
   printf("numParticles:%i, maxBlockSize:%i\n", numParticles, maxBlockSize);
   double * forces = (double *)malloc(sizeof(double) * numParticles * maxBlockSize*2);
   int blockSize = rowDistributions[my_rank];
@@ -424,24 +421,36 @@ int main(int argc, char* argv[]){
       printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step);
       for(int iter = 0; iter < p; iter++){
         printf("    %d: starting substep:%i step:%i iter:%i\n", my_rank, substep, step, iter);
-        // recieve
-        if(iter !=0 && recIndex != my_rank){
-          printf("%d: waiting to recieve from: %d\n", my_rank, recIndex);
-          iterPos = emptArr;
-          MPI_Recv(iterPos, numParticles*maxBlockSize, MPI_DOUBLE, recIndex, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-          printf("%d: recieved the array\n", my_rank);
-          //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
-        }
-
         printf("%d: going to process\n", my_rank);
         //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
         calculate(l_pos, iterPos, forces, rowDistributions[my_rank], my_rank);
 
         // send
-        if(iter != p-1 && sendIndex != my_rank){
-          printf("%d: going to send to: %d\n", my_rank, sendIndex);
-          //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
-          MPI_Send(iterPos, numParticles*maxBlockSize, MPI_DOUBLE, sendIndex, 1, MPI_COMM_WORLD);
+        if(sendIndex != my_rank && iter != p-1){
+          if(my_rank %2==0){
+            // recieve
+            printf("      %d: waiting to recieve from: %d\n", my_rank, recIndex);
+            iterPos = emptArr;
+            MPI_Recv(iterPos, maxBlockSize*3, MPI_DOUBLE, recIndex, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            printf("      %d: recieved the array\n", my_rank);
+
+            printf("      %d: going to send to: %d sending\n", my_rank, sendIndex);
+            //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
+            MPI_Send(iterPos, maxBlockSize*3, MPI_DOUBLE, sendIndex, 1, MPI_COMM_WORLD);
+
+            //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
+          }else{
+            printf("      %d: going to send to: %d\n", my_rank, sendIndex);
+            //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
+            MPI_Send(iterPos, maxBlockSize*3, MPI_DOUBLE, sendIndex, 1, MPI_COMM_WORLD);
+
+            // recieve
+            printf("      %d: waiting to recieve from: %d\n", my_rank, recIndex);
+            iterPos = emptArr;
+            MPI_Recv(iterPos, maxBlockSize*3, MPI_DOUBLE, recIndex, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            printf("      %d: recieved the array\n", my_rank);
+            //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
+          }
         }
       }
       printf("%d: starting sendForces\n", my_rank);
