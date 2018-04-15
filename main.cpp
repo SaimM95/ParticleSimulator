@@ -34,9 +34,8 @@ void drawParticle(unsigned char* img, int w,int h,int x, int y, int r, vec3 col)
   }
 }
 
-unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
+void createImage(double* pos, int w,int h, int nl, int nm, int nh, unsigned char* img){
   int size = w*h*3;
-  unsigned char* img = (unsigned char *)malloc(sizeof(char)*size);
   for(int i =0; i < size; i++){
     img[i] = 0;
   }
@@ -47,20 +46,20 @@ unsigned char* createImage(double* pos, int w,int h, int nl, int nm, int nh){
   for(int i =0; i < numPart; i++){
     if(i >= nm) col = colourHeavy;
     else if(i >= nl) col = colourMedium;
-    int x = (int)pos[i*2];
-    int y = (int)pos[i*2+1];
+    int x = (int)pos[i*3];
+    int y = (int)pos[i*3+1];
     drawParticle(img,w,h,x,y,radius,col);
   }
-
-  return img;
 }
 
 /* calcualtes the force particle one exerts on particle 2
  */
 double calcForce(double *p1, double *p2){
   double G = -0.00000000006673;
+  //double G = -0.01;
   double totalMass = p1[2] * p2[2];
   double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
+  if(dist == 0) return 0;
   return G * totalMass / (dist*dist*dist);
   //return (dist*dist*dist);
 }
@@ -92,8 +91,8 @@ void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, in
     double totalForceX = 0;
     double totalForceY = 0;
     for(int i =0; i < n; i++){
-      totalForceX += forces[(i + w*p)*2 + 0];
-      totalForceY += forces[(i + w*p)*2 + 1];
+      totalForceX += forces[(i + n*p)*2 + 0];
+      totalForceY += forces[(i + n*p)*2 + 1];
     }
     vel[p*2] += totalForceX;
     vel[p*2+1] += totalForceY;
@@ -321,7 +320,10 @@ void saveImage(char* filePrefix, int step, double* pos, int width, int height, i
   sprintf(snum, "%05d", step);
   strcat(fileName, snum);
   strcat(fileName, ".bmp");
-  unsigned char* img = createImage(pos, width, height,nLight,nMedium,nHeavy);
+
+  int size = width*height*3;
+  unsigned char* img = (unsigned char *)malloc(sizeof(char)*size);
+  createImage(pos, width, height,nLight,nMedium,nHeavy, img);
   saveBMP(fileName, img, width, height);
   free(img);
 }
@@ -371,6 +373,7 @@ int main(int argc, char* argv[]){
     // printf("Velocities:\n");
     // printVecArr(velocities, numParticles*2, my_rank, 2);
     //printf("\n");
+    saveImage(filePrefix, 0, positions, width, height, nLight,nMedium,nHeavy);
   }
 
   int maxBlockSize = (int) ceil(numParticles / (double)p);
@@ -414,7 +417,7 @@ int main(int argc, char* argv[]){
   // printf("%d: l_pos is \n", my_rank);
   // printVecArr(l_pos, blockSize*3, my_rank, 3);
 
-  for(int step = 0; step < nSteps; step++){
+  for(int step = 1; step < nSteps; step++){
     printf("%d: starting step:%i\n", my_rank, step);
     for(int substep = 0; substep < subSteps; substep++){
       iterPos = l_pos;
@@ -456,6 +459,7 @@ int main(int argc, char* argv[]){
       printf("%d: starting sendForces\n", my_rank);
       sendForces(forces, my_rank, p, numParticles, blockSize);
       printf("%d: done sending forces\n", my_rank);
+      printf("%d: going to updatePosition\n", my_rank);
       updatePos(forces, l_pos, l_vel, width, height, numParticles, blockSize);
       printf("%d: done updatePos \n", my_rank);
       printf("%d: done iteration\n", my_rank);
