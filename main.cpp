@@ -56,29 +56,46 @@ void createImage(double* pos, int w,int h, int nl, int nm, int nh, unsigned char
  */
 double calcForce(double *p1, double *p2){
   double G = -0.00000000006673;
-  //double G = -0.01;
+  //double G = -0.1;
   double totalMass = p1[2] * p2[2];
   double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
-  if(dist == 0) return 0;
-  return G * totalMass / (dist*dist*dist);
+  if(dist == 0) return 9999999;
+  //return G * totalMass / (dist*dist*dist);
+  //return G * totalMass / (dist*dist);
+  //int pixelsToMeters = 10;
+  //int distMeters = dist / (pixelsToMeters*pixelsToMeters);
+  double force = G * totalMass / (dist*dist*dist);
+  //double force = G * totalMass / (distMeters*distMeters*distMeters);
+  printf("the calculated force: %f\n", force);
+  return force;
   //return (dist*dist*dist);
+}
+
+int inline getNodeForProc(int proc, int p, int n){
+  int rem = n%p;
+  int avgBlockSize = n/p;
+  if(proc < rem) return proc * (avgBlockSize+1);
+  return rem* (avgBlockSize+1) + (proc-rem)*(avgBlockSize);
 }
 
 /* calls the f function on the amount of time this process needs
  *
  */
-void calculate(double *startPos, double * localPos, double *forces, int numPar, int rank){
-  //printf("%d: starting calculate numpar:%d\n", rank, numPar);
-  for(int i =0; i < numPar; i++){
-    for(int j =i; j < numPar; j++){
+void calculate(double *startPos, double * localPos, double *forces, int blockSize, int rank, int n, int rankOther, int p){
+  printf("%d: starting calculate numpar:%d blockSize:%i\n", rank, n, blockSize);
+  for(int i =0; i < blockSize; i++){
+    for(int j =i; j < blockSize; j++){
       double * p1 = &startPos[i*3];
       double * p2 = &localPos[j*3];
       if(p1 == p2) continue;
-      //printf("%d: p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
+      printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
       double f = calcForce(p1,p2);
-      forces[(i * numPar + j)*2] = f * (p1[0] - p2[0]);
-      forces[(i * numPar + j)*2+1] = f * (p1[1] - p2[1]);
-      //printf("%d: got the force f:%f\n", rank, f);
+      int newR = i;
+      int newC = j + getNodeForProc(rankOther, p, n);
+      int index = (newR * n + newC)*2;
+      forces[index] = f * (p1[0] - p2[0]);
+      forces[index+1] = f * (p1[1] - p2[1]);
+      printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n);
     }
   }
 }
@@ -157,6 +174,27 @@ double* genRandomVel(int nl, int nm, int nh) {
     // velocity can be negative
     if(drand48()*2 < 1) vel[i*2] = vel[i*2]*-1;
     if(drand48()*2 < 1) vel[i*2+1] = vel[i*2+1]*-1;
+  }
+  return vel;
+}
+
+double* genTestPos2(){
+  // test for testing forces
+  int size = 2 * 3;
+  double* positions = (double*) malloc(sizeof(double) * size);
+  positions[0] = 200;
+  positions[1] = 100;
+  positions[2] = 100;
+  positions[3] = 200;
+  positions[4] = 800;
+  positions[5] = 100;
+  return positions;
+}
+double * genVelZeros(int n){
+  int size = n * 2;
+  double* vel = (double*) malloc(sizeof(double) * size);
+  for(int i =0; i < n*2; i++){
+    vel[i] = 0;
   }
   return vel;
 }
@@ -259,12 +297,6 @@ int inline getProcessForNode(int sendNode, int p, int n){
   if(sendNode < rem + avgBlockSize * rem) return sendNode/(avgBlockSize+1);
   return rem + (sendNode - (avgBlockSize+1)*rem)/avgBlockSize;
 }
-int inline getNodeForProc(int proc, int p, int n){
-  int rem = n%p;
-  int avgBlockSize = n/p;
-  if(proc < rem) return proc * (avgBlockSize+1);
-  return rem* (avgBlockSize+1) + (proc-rem)*(avgBlockSize);
-}
 void sendForces(double *forces, int rank, int p, int n, int blockSize){
   /*
   int num =0;
@@ -287,26 +319,43 @@ void sendForces(double *forces, int rank, int p, int n, int blockSize){
       int actualRow = r + getNodeForProc(rank, p, n);
       int transferIndex = getProcessForNode(c, p, n);
       int index = (r*n+c)*2;
+      printf("%d: - sendForces - going to recieve (%i,%i) transferIndex: %i\n", rank, r,c,transferIndex);
       if(transferIndex == rank) continue;
+      //printf("%d: recieved value (%i,%i)\n", rank, r,c);
       MPI_Recv(&forces[index], 2, MPI_DOUBLE, transferIndex, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      forces[index] = forces[index]*-1;
+      forces[index+1] = forces[index+1]*-1;
+      printf("%d: - sendForces - going to recieved the value for (%i,%i) from: %i value:(%f,%f)\n", rank, r,c,transferIndex, forces[index], forces[index+1]);
+      //printf("%d: recieved value (%i,%i) of (%f,%f)\n", rank, r,c, forces[index], forces[index+1]);
       //printf("%d: updateForce - rec  - (%i,%i) actualRow: [%i] to %i got values:(%f,%f) index:%i\n", rank, r,c, actualRow, transferIndex, forces[index], forces[index+1], index);
     }
   }
 
   // send everything
-  int actualRow = 0 + getNodeForProc(rank, p, n);
+  int actualBaseRow = 0 + getNodeForProc(rank, p, n);
   for(int c =0; c < n; c++){
-    int rowEnd = c - actualRow;
+    int rowEnd = c - actualBaseRow;
     if(rowEnd > blockSize) rowEnd = blockSize;
     //printf("%d: updateForce - send - rowEnd: %i, (_,%i)\n", rank, rowEnd, c);
     for(int r =0; r < rowEnd; r++){
       int transferIndex = getProcessForNode(c, p, n);
       int index = (r*n+c)*2;
-      if(transferIndex == rank) continue;
+      //printf("%d: sendForces - send - (%i:%i) transferIndex: %i\n", rank, r,c,transferIndex);
+      if(transferIndex == rank){
+        // move element forces[r][c] to forces[c][r] where c > r
+        int newR = c - actualBaseRow;
+        int newC = r + actualBaseRow;
+        //printf("%d: sendForces - send - updating self (%i,%i) -> (%i,%i)\n", rank, r,c,newR, newC);
+        forces[(newR * n + newC)*2 + 0] = forces[(r*n+c)*2]*-1;
+        forces[(newR * n + newC)*2 + 1] = forces[(r*n+c)*2+1]*-1;
+        // forces[(newR * n + newC)*2 + 0] = tempArr[(r*n+c)*2]*-1;
+        // forces[(newR * n + newC)*2 + 1] = tempArr[(r*n+c)*2+1]*-1;
+        continue;
+      }
+      printf("%d: - sendForces - going to send the value for (%i,%i) from: %i value:(%f,%f)\n", rank, r,c,transferIndex, forces[index], forces[index+1]);
       MPI_Send(&forces[index], 2, MPI_DOUBLE, transferIndex, 2, MPI_COMM_WORLD);
       //MPI_Send(&tempArr[index], 2, MPI_DOUBLE, transferIndex, 2, MPI_COMM_WORLD);
-      //printf("%d: updateForce - rec  - (%i,%i) actualRow: [%i] to %i got values:(%f,%f) index:%i\n", rank, r,c, actualRow, transferIndex, forces[index], forces[index+1], index);
-      //printf("%d: updateForce - send - (%i,%i) actualRow: [%i] to %i got values:(%f,%f) index:%i\n", rank, r,c, actualRow, transferIndex, tempArr[index], tempArr[index+1], index);
+      //printf("%d: updateForce - send - (%i,%i) actualRow: [%i] to %i got values:(%f,%f) index:%i\n", rank, r,c, actualRow, transferIndex, forces[index], forces[index+1], index);
     }
   }
 }
@@ -322,7 +371,7 @@ void saveImage(char* filePrefix, int step, double* pos, int width, int height, i
   strcat(fileName, ".bmp");
 
   int size = width*height*3;
-  unsigned char* img = (unsigned char *)malloc(sizeof(char)*size);
+  unsigned char* img = (unsigned char *)malloc(sizeof(unsigned char)*size);
   createImage(pos, width, height,nLight,nMedium,nHeavy, img);
   saveBMP(fileName, img, width, height);
   free(img);
@@ -362,8 +411,12 @@ int main(int argc, char* argv[]){
     srand48(time(NULL));
 
     printf("%d: my_rank is \n", my_rank);
-    positions = genRandomPos(width, height, nLight, nMedium, nHeavy);
-    velocities = genRandomVel(nLight, nMedium, nHeavy);
+    //positions = genRandomPos(width, height, nLight, nMedium, nHeavy);
+    //velocities = genRandomVel(nLight, nMedium, nHeavy);
+
+    positions = genTestPos2();
+    velocities = genVelZeros(2);
+
     //positions = genTestArr(numParticles*3, 0,3);
     //velocities = genTestArr(numParticles*2, 1,2);
 
@@ -400,7 +453,7 @@ int main(int argc, char* argv[]){
   int sendIndex = (my_rank+1) % p;
 
   /*
-   * test send forces
+  //test send forces
   int num =0;
   for(int i=0; i < maxBlockSize; i++){
     for(int j =0; j < numParticles; j++){
@@ -410,7 +463,7 @@ int main(int argc, char* argv[]){
     }
   }
   sendForces(forces, my_rank, p, numParticles, blockSize);
-  printf("going to print vector array\n");
+  printf("going to print forces array\n");
   printVecArr(forces, blockSize*numParticles*2, my_rank, numParticles*2);
   */
 
@@ -422,14 +475,18 @@ int main(int argc, char* argv[]){
     for(int substep = 0; substep < subSteps; substep++){
       iterPos = l_pos;
       printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step);
+      int rankOther = my_rank;
       for(int iter = 0; iter < p; iter++){
         printf("    %d: starting substep:%i step:%i iter:%i\n", my_rank, substep, step, iter);
         printf("%d: going to process\n", my_rank);
         //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
-        calculate(l_pos, iterPos, forces, rowDistributions[my_rank], my_rank);
-
+        //calculate(l_pos, iterPos, forces, rowDistributions[my_rank], my_rank);
+        calculate(l_pos, iterPos, forces, rowDistributions[my_rank], my_rank, numParticles, rankOther, p);
+        printf("%d: after calculating print forces\n", my_rank);
+        printVecArr(forces, numParticles*maxBlockSize*2, my_rank,numParticles*2);
         // send
         if(sendIndex != my_rank && iter != p-1){
+          rankOther = recIndex;
           if(my_rank %2==0){
             // recieve
             printf("      %d: waiting to recieve from: %d\n", my_rank, recIndex);
@@ -456,9 +513,16 @@ int main(int argc, char* argv[]){
           }
         }
       }
+      printf("%d: after done the iteration print forces\n", my_rank);
+      printVecArr(forces, numParticles*maxBlockSize*2, my_rank,numParticles*2);
+
       printf("%d: starting sendForces\n", my_rank);
       sendForces(forces, my_rank, p, numParticles, blockSize);
       printf("%d: done sending forces\n", my_rank);
+
+      printf("%d: printing forces after send\n", my_rank);
+      printVecArr(forces, numParticles*maxBlockSize*2, my_rank,numParticles*2);
+
       printf("%d: going to updatePosition\n", my_rank);
       updatePos(forces, l_pos, l_vel, width, height, numParticles, blockSize);
       printf("%d: done updatePos \n", my_rank);
