@@ -112,6 +112,12 @@ void calculate(double *startPos, double * localPos, double *forces, int blockSiz
 
 // updates the positions of the particles
 void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, int blockSize){
+  // update position
+  for(int i = 0; i < blockSize; i++){
+    pos[i*3] += vel[i*2];
+    pos[i*3+1] += vel[i*2+1];
+  }
+
   // update velocities
   for(int p = 0; p < blockSize; p++){
     double totalForceX = 0;
@@ -125,11 +131,6 @@ void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, in
     vel[p*2+1] += totalForceY/mass;
   }
 
-  // update position
-  for(int i = 0; i < blockSize; i++){
-    pos[i*3] += vel[i*2];
-    pos[i*3+1] += vel[i*2+1];
-  }
 }
 
 
