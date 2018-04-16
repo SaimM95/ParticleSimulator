@@ -52,7 +52,7 @@ void createImage(double* pos, int w,int h, int nl, int nm, int nh, unsigned char
   }
 }
 
-int pixelsInMeter = 100;
+int pixelsInMeter = 1000;
 /* calcualtes the force particle one exerts on particle 2
  */
 double calcForce(double *p1, double *p2){
@@ -60,8 +60,8 @@ double calcForce(double *p1, double *p2){
   //double G = -0.1;
   double totalMass = p1[2] * p2[2];
   double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
-  //dist = dist / pixelsInMeter;
-  if(dist == 0) return 0; // equal force in all direction
+  //if(dist < 1) return 0; // equal force in all direction
+  dist = dist / pixelsInMeter;
   //return G * totalMass / (dist*dist*dist);
   //return G * totalMass / (dist*dist);
   //int pixelsToMeters = 10;
@@ -69,8 +69,9 @@ double calcForce(double *p1, double *p2){
   //double force = totalMass;
   //double force = G * totalMass / (dist*dist*dist);
   //double force = G * totalMass / (dist);
-  double force = G * totalMass / (dist*dist*dist);
-  // printf("the calculated force: %f\n", force);
+  double smallConstant = 0.0000033;
+  double force = G * totalMass / (dist*dist*dist + smallConstant);
+  printf("the calculated force: %f dist:%f, totalMas: %f\n", force, dist, totalMass);
   return force;
   //return (dist*dist*dist);
 }
@@ -95,23 +96,20 @@ void calculate(double *startPos, double * localPos, double *forces, int blockSiz
       double * p1 = &startPos[i*3];
       double * p2 = &localPos[j*3];
       //if(p1 == p2) continue;
-      // printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
+      printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
       double f = calcForce(p1,p2);
       int newR = i;
       int newC = j + getNodeForProc(rankOther, p, n);
       int index = (newR * n + newC)*2;
-      forces[index] = f * (p1[0] - p2[0]);
-      forces[index+1] = f * (p1[1] - p2[1]);
-      //forces[index] = f;
-      //forces[index+1] = f;
-      // printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n);
+      forces[index] = f * (p1[0] - p2[0])/pixelsInMeter;
+      forces[index+1] = f * (p1[1] - p2[1])/pixelsInMeter;
+      printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n);
     }
   }
 }
 
 // updates the positions of the particles
 void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, int blockSize){
-
   double *F = (double*) malloc(sizeof(double) * blockSize * 2);
   int timeStep = 1;
 
@@ -229,12 +227,12 @@ double* genTestPos2(){
   int size = 2 * 3;
   double* positions = (double*) malloc(sizeof(double) * size);
   positions[0] = 500;
-  positions[1] = 400;
-  positions[2] = 100000000000.0f;
+  positions[1] = 480;
+  positions[2] = 1000.0f;
 
   positions[3] = 500;
-  positions[4] = 600;
-  positions[5] = 1.0f;
+  positions[4] = 520;
+  positions[5] = 3000.0f;
 
   /*
   positions[6] = 700;
@@ -460,10 +458,10 @@ int main(int argc, char* argv[]){
   // printf("width: %i, height:%i\n", width, height);
 
 
-  // double *positions, *velocities;
+  double *positions, *velocities;
   // positions = (double*)malloc(sizeof(double)*3*numParticles);
-  double positions[6] = {500,300,1, 500,500,pow(10,17)};
-  double velocities[4] = {0,0, 0,0};
+  //double positions[6] = {500,300,1, 500,500,pow(10,17)};
+  //double velocities[4] = {0,0, 0,0};
 
   //root node stuff goes here
   if(my_rank == 0){
@@ -471,10 +469,10 @@ int main(int argc, char* argv[]){
     srand48(time(NULL));
 
     // printf("%d: my_rank is \n", my_rank);
-    //positions = genRandomPos(width, height, nLight, nMedium, nHeavy);
-    // positions = genTestPos2();
-    //velocities = genRandomVel(nLight, nMedium, nHeavy);
-    // velocities = genVelZeros(2);
+    positions = genRandomPos(width, height, nLight, nMedium, nHeavy);
+    velocities = genRandomVel(nLight, nMedium, nHeavy);
+    //positions = genTestPos2();
+    //velocities = genVelZeros(2);
 
     // positions = genTestPos2();
     // velocities = genVelZeros(2);
@@ -533,10 +531,10 @@ int main(int argc, char* argv[]){
   // printVecArr(l_pos, blockSize*3, my_rank, 3);
 
   for(int step = 1; step < nSteps; step++){
-    // printf("%d: starting step:%i\n", my_rank, step);
+     printf("%d: starting step:%i\n", my_rank, step);
     for(int substep = 0; substep < subSteps; substep++){
       iterPos = l_pos;
-      // printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step);
+      printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step);
       int rankOther = my_rank;
       for(int iter = 0; iter < p; iter++){
         // printf("    %d: starting substep:%i step:%i iter:%i\n", my_rank, substep, step, iter);
