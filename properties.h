@@ -6,25 +6,25 @@
 //light particles are the fastest
 // double velocityLightMin = 11;
 // double velocityLightMax = 15;
-double velocityLightMin = 1.0;
-double velocityLightMax = 1.0;
+double velocityLightMin = 0.8;
+double velocityLightMax = 1.2;
 
-double velocityMediumMin = 0.6;
-double velocityMediumMax = 0.1;
+double velocityMediumMin = 0.1;
+double velocityMediumMax = 0.4;
 
 //heavy particles are the slowest
-double velocityHeavyMin = 0.1;
-double velocityHeavyMax = 0.05;
+double velocityHeavyMin = 0.05;
+double velocityHeavyMax = 0.1;
 
 //mass
-double massLightMin = 1000;
-double massLightMax = 5000;
+double massLightMin = 1000000;
+double massLightMax = 5000000;
 
-double massMediumMin = 6000;
-double massMediumMax = 10000;
+double massMediumMin = 6000000;
+double massMediumMax = 10000000;
 
-double massHeavyMin = 11000;
-double massHeavyMax = 15000;
+double massHeavyMin = 11000000;
+double massHeavyMax = 15000000;
 
 
 //colours

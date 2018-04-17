@@ -27,9 +27,14 @@ void drawParticle(unsigned char* img, int w,int h,int x, int y, int r, vec3 col)
     for(int y = minY; y < maxY; y++){
       if(y < 0) continue;
       if(y >= h) break;
-      img[(cx + y*w)*3] = col.x*255;
-      img[(cx + y*w)*3+1] = col.y*255;
-      img[(cx + y*w)*3+2] = col.z*255;
+      /* img[(cx + y*w)*3] = col.x*255; */
+      /* img[(cx + y*w)*3+1] = col.y*255; */
+      /* img[(cx + y*w)*3+2] = col.z*255; */
+      // col = (r,g,b)
+      // img[(g,r,b)]
+      img[(cx + y*w)*3] = col.z*255;   // blue
+      img[(cx + y*w)*3+1] = col.y*255; // green
+      img[(cx + y*w)*3+2] = col.x*255; // red
     }
   }
 }
@@ -44,7 +49,7 @@ void createImage(double* pos, int w,int h, int nl, int nm, int nh, unsigned char
   vec3 col = colourLight;
   int numPart = nl+nm+nh;
   for(int i =0; i < numPart; i++){
-    if(i >= nm) col = colourHeavy;
+    if(i >= nm + nl) col = colourHeavy;
     else if(i >= nl) col = colourMedium;
     int x = (int)pos[i*3];
     int y = (int)pos[i*3+1];
@@ -52,7 +57,7 @@ void createImage(double* pos, int w,int h, int nl, int nm, int nh, unsigned char
   }
 }
 
-int pixelsInMeter = 1000;
+int pixelsInMeter = 100;
 /* calcualtes the force particle one exerts on particle 2
  */
 double calcForce(double *p1, double *p2){
@@ -71,7 +76,7 @@ double calcForce(double *p1, double *p2){
   //double force = G * totalMass / (dist);
   double smallConstant = 0.0000033;
   double force = G * totalMass / (dist*dist*dist + smallConstant);
-  printf("the calculated force: %f dist:%f, totalMas: %f\n", force, dist, totalMass);
+  /* printf("the calculated force: %f dist:%f, totalMas: %f\n", force, dist, totalMass); */
   return force;
   //return (dist*dist*dist);
 }
@@ -96,14 +101,14 @@ void calculate(double *startPos, double * localPos, double *forces, int blockSiz
       double * p1 = &startPos[i*3];
       double * p2 = &localPos[j*3];
       //if(p1 == p2) continue;
-      printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
+      /* printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] ); */
       double f = calcForce(p1,p2);
       int newR = i;
       int newC = j + getNodeForProc(rankOther, p, n);
       int index = (newR * n + newC)*2;
       forces[index] = f * (p1[0] - p2[0])/pixelsInMeter;
       forces[index+1] = f * (p1[1] - p2[1])/pixelsInMeter;
-      printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n);
+      /* printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n); */
     }
   }
 }
@@ -419,7 +424,7 @@ void saveImage(char* filePrefix, int step, double* pos, int width, int height, i
   // char * fileName = (char *)malloc(strlen(filePrefix));
   char fileName[30];
   strcpy(fileName, filePrefix);
-  // printf("file prefix is: %s, fileName:%s\n", filePrefix, fileName);
+  //printf("\n");
 
   char snum[5];
   sprintf(snum, "%05d", step);
@@ -531,10 +536,10 @@ int main(int argc, char* argv[]){
   // printVecArr(l_pos, blockSize*3, my_rank, 3);
 
   for(int step = 1; step < nSteps; step++){
-     printf("%d: starting step:%i\n", my_rank, step);
+     /* printf("%d: starting step:%i\n", my_rank, step); */
     for(int substep = 0; substep < subSteps; substep++){
       iterPos = l_pos;
-      printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step);
+      /* printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step); */
       int rankOther = my_rank;
       for(int iter = 0; iter < p; iter++){
         // printf("    %d: starting substep:%i step:%i iter:%i\n", my_rank, substep, step, iter);
@@ -594,10 +599,11 @@ int main(int argc, char* argv[]){
     // printf("%d: starting the gather\n", my_rank);
     gather(positions, l_pos, numParticles, 3, p, my_rank);
 
+    /*
     printf("Printing positions\n");
     for (int i = 0; i < blockSize; ++i) {
       printf("%d:(%.4f,%.4f)\n", my_rank, l_pos[i*3], l_pos[i*3+1]);
-    }
+    }*/
 
     // printf("%d: ending the gather\n", my_rank);
     if(my_rank == 0){
