@@ -16,6 +16,13 @@ double velocityMediumMax = 0.4;
 double velocityHeavyMin = 0.05;
 double velocityHeavyMax = 0.1;
 
+// double velocityMediumMin = 0.01;
+// double velocityMediumMax = 0.1;
+//
+// //heavy particles are the slowest
+// double velocityHeavyMin = 0.001;
+// double velocityHeavyMax = 0.005;
+
 //mass
 double massLightMin = 1000000;
 double massLightMax = 5000000;
