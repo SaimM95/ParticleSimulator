@@ -124,9 +124,8 @@ void calculate(double *startPos, double * localPos, double *forces, int blockSiz
 }
 
 // updates the positions of the particles
-void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, int blockSize){
+void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, int blockSize, double timeSubStep){
   double *F = (double*) malloc(sizeof(double) * blockSize * 2);
-  int timeStep = 1;
 
   for (int i = 0; i < blockSize; ++i) {
     F[i*2] = 0;
@@ -153,8 +152,8 @@ void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, in
   // }
 
   for (int i = 0; i < blockSize; ++i) {
-    double posX = pos[i*3] + timeStep * vel[i*2];
-    double posY = pos[i*3+1] + timeStep * vel[i*2+1];
+    double posX = pos[i*3] + timeSubStep * vel[i*2];
+    double posY = pos[i*3+1] + timeSubStep * vel[i*2+1];
 
     if (posX < 0) pos[i*3] = w;
     else if (posX > w) pos[i*3] = 0;
@@ -165,8 +164,8 @@ void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, in
     else pos[i*3+1] = posY;
 
     double mass = pos[i*3+2];
-    vel[i*2] += timeStep * F[i*2] * (1/mass);
-    vel[i*2+1] += timeStep * F[i*2+1] * (1/mass);
+    vel[i*2] += timeSubStep * F[i*2] * (1/mass);
+    vel[i*2+1] += timeSubStep * F[i*2+1] * (1/mass);
   }
 
   // update velocities
@@ -480,7 +479,7 @@ int main(int argc, char* argv[]){
   char* filePrefix = argv[9];
   int numParticles = nLight + nMedium + nHeavy;
   // printf("width: %i, height:%i\n", width, height);
-  printf("light:%d med:%d heavy:%d\n", nLight, nMedium, nHeavy);
+  // printf("light:%d med:%d heavy:%d\n", nLight, nMedium, nHeavy);
 
 
   double *positions, *velocities;
@@ -559,7 +558,12 @@ int main(int argc, char* argv[]){
   // printf("%d: l_pos is \n", my_rank);
   // printVecArr(l_pos, blockSize*3, my_rank, 3);
 
-  for(int step = 1; step < nSteps; step++){
+  double starttime, endtime, stepTime, totalTime, aveTime, minTime = 99999, maxTime = 0;
+
+  for(int step = 1; step < nSteps; step++) {
+    if (my_rank == 0) {
+        starttime = MPI_Wtime();
+    }
      // printf("%d: starting step:%i\n", my_rank, step);
     for(int substep = 0; substep < subSteps; substep++){
       iterPos = l_pos;
@@ -613,11 +617,19 @@ int main(int argc, char* argv[]){
       // printVecArr(forces, numParticles*maxBlockSize*2, my_rank,numParticles*2);
 
       // printf("%d: going to updatePosition\n", my_rank);
-      updatePos(forces, l_pos, l_vel, width, height, numParticles, blockSize);
+      updatePos(forces, l_pos, l_vel, width, height, numParticles, blockSize, timeSubStep);
       // printf("%d: done updatePos \n", my_rank);
       // printf("%d: done iteration\n", my_rank);
       //printf("%d: printing l_pos\n", my_rank);
       //printVecArr(l_pos, maxBlockSize*3, my_rank, 3);
+    }
+
+    if (my_rank == 0) {
+        endtime = MPI_Wtime();
+        stepTime = endtime - starttime;
+        totalTime += stepTime;
+        if (stepTime > maxTime) maxTime = stepTime;
+        if (stepTime < minTime) minTime = stepTime;
     }
 
     // printf("%d: starting the gather\n", my_rank);
@@ -631,17 +643,22 @@ int main(int argc, char* argv[]){
 
     // printf("%d: ending the gather\n", my_rank);
     if(my_rank == 0){
-      if (step == nSteps-1) {
-        printf("Printing positions\n");
-        for (int i = 0; i < blockSize; ++i) {
-          printf("%d:(%.4f,%.4f)\n", my_rank, l_pos[i*3], l_pos[i*3+1]);
-        }
-      }
+      // if (step == nSteps-1) {
+      //   printf("Printing positions\n");
+      //   for (int i = 0; i < blockSize; ++i) {
+      //     printf("%d:(%.4f,%.4f)\n", my_rank, l_pos[i*3], l_pos[i*3+1]);
+      //   }
+      // }
       // send all the positions to process 0, do a gather
       // printf("post gather positions:\n");
       // printVecArr(positions, numParticles*3, my_rank,3);
       saveImage(filePrefix, step, positions, width, height, nLight,nMedium,nHeavy);
     }
+  }
+
+  if (my_rank == 0) {
+    aveTime = totalTime / (double) nSteps;
+    printf("min:%.4f max:%.4f average:%.4f\n", minTime, maxTime, aveTime);
   }
 
   MPI_Finalize();
