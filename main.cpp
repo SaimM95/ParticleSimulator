@@ -62,6 +62,8 @@ int pixelsInMeter = 100;
  */
 double calcForce(double *p1, double *p2){
   double G = -0.00000000006673;
+  // no force is applied within 'radius' for each particle
+  double radius = 100;
   //double G = -0.1;
   double totalMass = p1[2] * p2[2];
   double dist = sqrt((p1[1]-p2[1])*(p1[1]-p2[1]) + (p1[0]-p2[0])*(p1[0]-p2[0]));
@@ -74,8 +76,13 @@ double calcForce(double *p1, double *p2){
   //double force = totalMass;
   //double force = G * totalMass / (dist*dist*dist);
   //double force = G * totalMass / (dist);
-  double smallConstant = 0.0000033;
-  double force = G * totalMass / (dist*dist*dist + smallConstant);
+  double force;
+  if (dist*pixelsInMeter < radius) {
+    force = 0;
+  } else {
+    double smallConstant = 0.0000033;
+    force = G * totalMass / (dist*dist*dist + smallConstant);
+  }
   /* printf("the calculated force: %f dist:%f, totalMas: %f\n", force, dist, totalMass); */
   // printf("the calculated force: %f dist:%f, totalMas: %f\n", force, dist, totalMass);
   return force;
@@ -108,8 +115,8 @@ void calculate(double *startPos, double * localPos, double *forces, int blockSiz
       int newR = i;
       int newC = j + getNodeForProc(rankOther, p, n);
       int index = (newR * n + newC)*2;
-      forces[index] = f * (p1[0] - p2[0])/pixelsInMeter;
-      forces[index+1] = f * (p1[1] - p2[1])/pixelsInMeter;
+      forces[index] = f * ((p1[0] - p2[0])/pixelsInMeter);
+      forces[index+1] = f * ((p1[1] - p2[1])/pixelsInMeter);
       /* printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n); */
       // printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n);
     }
@@ -146,8 +153,16 @@ void updatePos(double *forces, double *pos, double *vel, int w, int h, int n, in
   // }
 
   for (int i = 0; i < blockSize; ++i) {
-    pos[i*3] += timeStep * vel[i*2];
-    pos[i*3+1] += timeStep * vel[i*2+1];
+    double posX = pos[i*3] + timeStep * vel[i*2];
+    double posY = pos[i*3+1] + timeStep * vel[i*2+1];
+
+    if (posX < 0) pos[i*3] = w;
+    else if (posX > w) pos[i*3] = 0;
+    else pos[i*3] = posX;
+
+    if (posY < 0) pos[i*3+1] = h;
+    else if (posY > h) pos[i*3+1] = 0;
+    else pos[i*3+1] = posY;
 
     double mass = pos[i*3+2];
     vel[i*2] += timeStep * F[i*2] * (1/mass);
@@ -470,8 +485,8 @@ int main(int argc, char* argv[]){
 
   double *positions, *velocities;
   // positions = (double*)malloc(sizeof(double)*3*numParticles);
-  //double positions[6] = {500,300,1, 500,500,pow(10,17)};
-  //double velocities[4] = {0,0, 0,0};
+  // double positions[9] = {1000,500,50000, 800,500,500000, 500,500,15*pow(10,6)};
+  // double velocities[6] = {0.1,0.1, 0.01,0.01, 0.003,0.003};
 
   //root node stuff goes here
   if(my_rank == 0){
@@ -616,12 +631,12 @@ int main(int argc, char* argv[]){
 
     // printf("%d: ending the gather\n", my_rank);
     if(my_rank == 0){
-      // if (step == nSteps-1) {
-      //   printf("Printing positions\n");
-      //   for (int i = 0; i < blockSize; ++i) {
-      //     printf("%d:(%.4f,%.4f)\n", my_rank, l_pos[i*3], l_pos[i*3+1]);
-      //   }
-      // }
+      if (step == nSteps-1) {
+        printf("Printing positions\n");
+        for (int i = 0; i < blockSize; ++i) {
+          printf("%d:(%.4f,%.4f)\n", my_rank, l_pos[i*3], l_pos[i*3+1]);
+        }
+      }
       // send all the positions to process 0, do a gather
       // printf("post gather positions:\n");
       // printVecArr(positions, numParticles*3, my_rank,3);
