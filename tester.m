@@ -4,9 +4,11 @@ function tester(iterations)
 	% M = [1;10^17];
 	H = 1;
 
-	P = [712.4900,548.8440;1453.8590,506.4524];
-	V = [4.4121,-4.1096;4.4690,-4.8080];
-	M = [11.7696;11.8736];
+	P = [1000,500; 
+		 800,500; 
+		 500,500];
+	V = [0.1,0.1; 0.01,0.01; 0.003,0.003];
+	M = [50000; 500000; 15*10^6];
 
 	for t=1:iterations
 		% fprintf('Time Step = %d\n', t);
@@ -17,7 +19,7 @@ function tester(iterations)
 		for i=1:n
 			for j=i+1:n
 				% fprintf('%d,%d\n', i, j);
-				f = calcforce(M(i), M(j), P(i,1), P(i,2), P(j,1), P(j,2));
+				[f, H] = calcforce(M(i), M(j), P(i,1), P(i,2), P(j,1), P(j,2), H);
 				forces(i,j,1) = f(1);
 				forces(i,j,2) = f(2);
 			end
@@ -46,7 +48,9 @@ function tester(iterations)
 			end
 		end
 
-		% F
+		if (t == iterations)
+			F
+		end
 
 		for i=1:n
 			P(i,:) = P(i,:) + H*V(i,:);
@@ -58,17 +62,26 @@ function tester(iterations)
 	end
 
 	P
+	V
 end
 
-function force = calcforce(m1, m2, p1x, p1y, p2x, p2y)
-	pixelsPerMeter = 10000;
+function [force, Hout] = calcforce(m1, m2, p1x, p1y, p2x, p2y, Hin)
+	pixelsPerMeter = 100;
+	radius = 10;
+	Hout = Hin;
 
 	s1 = [p1x;p1y];
 	s2 = [p2x;p2y];
 
 	G = 6.673*10^-11;
 	d = norm(s1-s2) / pixelsPerMeter;
-	force = -G * ((m1*m2)/d^3) * (s1 - s2);
+
+	if (d*pixelsPerMeter < radius)
+		d
+		force = [0,0];
+	else
+		force = -G * ((m1*m2)/d^3) * (s1 - s2);
+	end
 end
 
 function velocity = calcVelocity(velPrev, h, forcesPrev, m)
