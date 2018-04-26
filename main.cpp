@@ -549,6 +549,10 @@ void sendForces2(double *forces, int rank, int p, int n, int blockSize){
   // scatter
   scatter2(totalForces, forces, n, n, p, rank);
 
+  if(rank == 0){
+    free(totalForces);
+  }
+
   /*
   // recieve everything
   for(int r =0; r < blockSize; r++){
@@ -615,7 +619,7 @@ void saveImage(char* filePrefix, int step, double* pos, int width, int height, i
   strcat(fileName, ".bmp");
 
   saveBMP(fileName, img, width, height);
-  //free(img);
+  free(img);
 }
 int main(int argc, char* argv[]){
   if( argc != 10){
