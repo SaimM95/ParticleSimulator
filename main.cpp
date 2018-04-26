@@ -86,7 +86,6 @@ double calcForce(double *p1, double *p2){
   /* printf("the calculated force: %f dist:%f, totalMas: %f\n", force, dist, totalMass); */
   // printf("the calculated force: %f dist:%f, totalMas: %f\n", force, dist, totalMass);
   return force;
-  //return (dist*dist*dist);
 }
 
 int inline getNodeForProc(int proc, int p, int n){
@@ -100,21 +99,25 @@ int inline getNodeForProc(int proc, int p, int n){
  *
  */
 void calculate(double *startPos, double * localPos, double *forces, int blockSize, int rank, int n, int rankOther, int p){
-  // printf("%d: starting calculate numpar:%d blockSize:%i\n", rank, n, blockSize);
+  printf("%d: starting calculate numpar:%d blockSize:%i\n", rank, n, blockSize);
   for(int i =0; i < blockSize; i++){
     int startIndex=0;
     if(startPos == localPos) startIndex = i;
     //if(startPos == localPos) startIndex = i+1;
     for(int j =startIndex; j < blockSize; j++){
+      //printf("%d: getting p1 and p2 i:%i, j:%i\n", rank, i, j);
       double * p1 = &startPos[i*3];
       double * p2 = &localPos[j*3];
       //if(p1 == p2) continue;
-      /* printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] ); */
+      //printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
       // printf("%d: updating force value p1: (%f,%f,%f), p2:(%f,%f,%f)\n",rank, p1[0],p1[1],p1[2],  p2[0],p2[1],p2[2] );
       double f = calcForce(p1,p2);
       int newR = i;
       int newC = j + getNodeForProc(rankOther, p, n);
+      if(newC >= n) continue; // because of the block size diff, just ignore it
+
       int index = (newR * n + newC)*2;
+      /* printf("%d: calculating force at index index: %i position:(%i,%i)\n", rank, index, newR, newC); */
       forces[index] = f * ((p1[0] - p2[0])/pixelsInMeter);
       forces[index+1] = f * ((p1[1] - p2[1])/pixelsInMeter);
       /* printf("%d: calculate force f:%f updating value at (%i,%i) rankOther:%i n:%i\n", rank, f, newR, newC, rankOther, n); */
@@ -367,6 +370,69 @@ void gather(double *pos, double *pos_loc, int rows, int cols, int p, int rank){
     pos, counts, displacements,
     MPI_DOUBLE, 0, MPI_COMM_WORLD);
 }
+void gather2(double *pos, double *pos_loc, int rows, int cols, int p, int rank){
+  int *rowDistributions, *counts, *displacements;
+  int i;
+
+  rowDistributions = (int*) malloc(sizeof(int) * p);
+  calcRowDistributions(rows, p, rowDistributions);
+
+  counts = (int*) malloc(sizeof(int) * p);
+  for (i = 0; i < p; ++i) {
+      counts[i] = rowDistributions[i] * cols*2;
+  }
+
+  displacements = (int*) malloc(sizeof(int) * p);
+  displacements[0] = 0;
+  for (i = 1; i < p; ++i) {
+      displacements[i] = displacements[i-1] + counts[i-1];
+  }
+
+  /*
+  printf("%d: going to gather forces, rowDist:%i, size to send:%i\n", rank, rowDistributions[rank], rowDistributions[rank]*cols);
+  printf("%d: print pos_loc\n", rank);
+  printVecArr(pos_loc, rowDistributions[rank]*cols*2, rank, cols*2);
+  */
+  MPI_Gatherv(pos_loc, rowDistributions[rank]*cols*2, MPI_DOUBLE,
+    pos, counts, displacements,
+    MPI_DOUBLE, 0, MPI_COMM_WORLD);
+}
+int* scatter2(double *matrix, double *local_matrix, int rows, int cols, int p, int rank) {
+  int *rowDistributions, *counts, *displacements;
+  int local_count, i;
+
+  // how many rows per processor
+  rowDistributions = (int*) malloc(sizeof(int) * p);
+  calcRowDistributions(rows, p, rowDistributions);
+
+  // if (rank == p-1) {
+  //   printf("Row Distributions:\n");
+  //   printArr(rowDistributions, p);
+  // }
+
+  // 1D mapping of rowDistributions
+  // e.g. For a 5x4 matrix, {1,1,1,2} => {4,4,4,8}
+  counts = (int*) malloc(sizeof(int) * p);
+  for (i = 0; i < p; ++i) {
+      counts[i] = rowDistributions[i] * cols*2;
+  }
+
+  // starting indices of each row in the 1D mapping
+  // e.g. For counts = {4,4,4,8} => {0,4,8,12}
+  displacements = (int*) malloc(sizeof(int) * p);
+  displacements[0] = 0;
+  for (i = 1; i < p; ++i) {
+      displacements[i] = displacements[i-1] + counts[i-1];
+  }
+
+  local_count = counts[rank];
+
+  MPI_Scatterv(matrix, counts, displacements, MPI_DOUBLE, // send local_n rows, which contains m vals
+              local_matrix, local_count, MPI_DOUBLE, // receive local_n rows, which contains m vals
+              0, MPI_COMM_WORLD); // sent from root node 0
+
+  return rowDistributions;
+}
 
 int inline getProcessForNode(int sendNode, int p, int n){
   int rem = n%p;
@@ -436,6 +502,102 @@ void sendForces(double *forces, int rank, int p, int n, int blockSize){
     }
   }
 }
+void sendForces2(double *forces, int rank, int p, int n, int blockSize){
+  /*
+  printf("%d: starting sendForces2\n", rank);
+  int num =0;
+  int size = blockSize;//ceil(n/(float)p);
+  double * tempArr = (double*)malloc(sizeof(double) * size * n*2);
+  for(int i=0; i < size; i++){
+    for(int j =0; j < n; j++){
+      tempArr[(i*n+j)*2+0] = num;
+      tempArr[(i*n+j)*2+1] = num;
+      if(rank == 0) num++;
+      else num--;
+    }
+  }
+  printf("%d: going to print the temp array\n", rank);
+  printVecArr(tempArr, blockSize*n*2, rank, n*2);
+  */
+
+  double * totalForces;
+  if(rank == 0){
+    totalForces = (double *)malloc(2*n * n * sizeof(double));
+  }
+
+  // gather
+  printf("%d: sendForces2 - going to gather the forces printing forces for current\n", rank);
+  //gather(totalForces, forces, n, n, p, rank);
+  gather2(totalForces, forces, n, n, p, rank);
+
+  if(rank == 0){
+    /* printf("%d: going to print the gathered forces\n", rank); */
+    /* printVecArr(totalForces, n*n*2, rank, n*2); */
+    //printf("0: going to print the gathered forces\n");
+    //printVecArr(totalForces, n*n*2, rank, n*2);
+    // flip the shit
+    for(int r =0; r < n; r++){
+      for(int c=r; c < n; c++){
+        totalForces[(c*n+r)*2] = totalForces[(r*n+c)*2];
+        totalForces[(c*n+r)*2+1] = totalForces[(r*n+c)*2+1];
+      }
+    }
+    /* printf("0: after calculation updated\n"); */
+    /* printVecArr(totalForces, n*n*2, rank, n*2); */
+  }
+
+  // scatter
+  scatter2(totalForces, forces, n, n, p, rank);
+
+  /*
+  // recieve everything
+  for(int r =0; r < blockSize; r++){
+    int actualRow = r + getNodeForProc(rank, p, n);
+    for(int c =0; c < actualRow; c++){
+      int actualRow = r + getNodeForProc(rank, p, n);
+      int transferIndex = getProcessForNode(c, p, n);
+      int index = (r*n+c)*2;
+      // printf("%d: - sendForces - going to recieve (%i,%i) transferIndex: %i\n", rank, r,c,transferIndex);
+      if(transferIndex == rank) continue;
+      //printf("%d: recieved value (%i,%i)\n", rank, r,c);
+      MPI_Recv(&forces[index], 2, MPI_DOUBLE, transferIndex, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      forces[index] = forces[index]*-1;
+      forces[index+1] = forces[index+1]*-1;
+      // printf("%d: - sendForces - going to recieved the value for (%i,%i) from: %i value:(%f,%f)\n", rank, r,c,transferIndex, forces[index], forces[index+1]);
+      //printf("%d: recieved value (%i,%i) of (%f,%f)\n", rank, r,c, forces[index], forces[index+1]);
+      //printf("%d: updateForce - rec  - (%i,%i) actualRow: [%i] to %i got values:(%f,%f) index:%i\n", rank, r,c, actualRow, transferIndex, forces[index], forces[index+1], index);
+    }
+  }
+
+  // send everything
+  int actualBaseRow = 0 + getNodeForProc(rank, p, n);
+  for(int c =0; c < n; c++){
+    int rowEnd = c - actualBaseRow;
+    if(rowEnd > blockSize) rowEnd = blockSize;
+    //printf("%d: updateForce - send - rowEnd: %i, (_,%i)\n", rank, rowEnd, c);
+    for(int r =0; r < rowEnd; r++){
+      int transferIndex = getProcessForNode(c, p, n);
+      int index = (r*n+c)*2;
+      //printf("%d: sendForces - send - (%i:%i) transferIndex: %i\n", rank, r,c,transferIndex);
+      if(transferIndex == rank){
+        // move element forces[r][c] to forces[c][r] where c > r
+        int newR = c - actualBaseRow;
+        int newC = r + actualBaseRow;
+        //printf("%d: sendForces - send - updating self (%i,%i) -> (%i,%i)\n", rank, r,c,newR, newC);
+        forces[(newR * n + newC)*2 + 0] = forces[(r*n+c)*2]*-1;
+        forces[(newR * n + newC)*2 + 1] = forces[(r*n+c)*2+1]*-1;
+        // forces[(newR * n + newC)*2 + 0] = tempArr[(r*n+c)*2]*-1;
+        // forces[(newR * n + newC)*2 + 1] = tempArr[(r*n+c)*2+1]*-1;
+        continue;
+      }
+      // printf("%d: - sendForces - going to send the value for (%i,%i) from: %i value:(%f,%f)\n", rank, r,c,transferIndex, forces[index], forces[index+1]);
+      MPI_Send(&forces[index], 2, MPI_DOUBLE, transferIndex, 2, MPI_COMM_WORLD);
+      //MPI_Send(&tempArr[index], 2, MPI_DOUBLE, transferIndex, 2, MPI_COMM_WORLD);
+      //printf("%d: updateForce - send - (%i,%i) actualRow: [%i] to %i got values:(%f,%f) index:%i\n", rank, r,c, actualRow, transferIndex, forces[index], forces[index+1], index);
+    }
+  }*/
+}
+
 
 void saveImage(char* filePrefix, int step, double* pos, int width, int height, int nLight, int nMedium, int nHeavy){
   // char * fileName = (char *)malloc(strlen(filePrefix)+30);
@@ -453,7 +615,7 @@ void saveImage(char* filePrefix, int step, double* pos, int width, int height, i
   strcat(fileName, ".bmp");
 
   saveBMP(fileName, img, width, height);
-  free(img);
+  //free(img);
 }
 int main(int argc, char* argv[]){
   if( argc != 10){
@@ -501,13 +663,15 @@ int main(int argc, char* argv[]){
     // positions = genTestPos2();
     // velocities = genVelZeros(2);
 
-    // positions = genTestArr(numParticles*3, 0,3);
-    // velocities = genTestArr(numParticles*2, 1,2);
+    /* positions = genTestArr(numParticles*3, 0,3); */
+    /* velocities = genTestArr(numParticles*2, 1,2); */
 
-    // printf("Printing positions [mass]\n");
-    // for (int i = 0; i < numParticles; ++i) {
-    //   printf("(p):(%.4f,%.4f)[%f]\n", positions[i*3], positions[i*3+1], positions[i*3+2]);
-    // }
+    /*
+    printf("Printing positions [mass]\n");
+    for (int i = 0; i < numParticles; ++i) {
+      printf("(p):(%.4f,%.4f)[%f]\n", positions[i*3], positions[i*3+1], positions[i*3+2]);
+    }
+    */
 
     // printf("Printing velocities\n");
     // for (int i = 0; i < numParticles; ++i) {
@@ -534,7 +698,7 @@ int main(int argc, char* argv[]){
 
   // init stuff
   //int maxBlockSize = numParticles/p+1;
-  // printf("numParticles:%i, maxBlockSize:%i\n", numParticles, maxBlockSize);
+  printf("%d: numParticles:%i, maxBlockSize:%i\n", my_rank, numParticles, maxBlockSize);
   double * forces = (double *)malloc(sizeof(double) * numParticles * maxBlockSize*2);
   int blockSize = rowDistributions[my_rank];
   int recIndex = (my_rank-1+p) % p;
@@ -564,15 +728,16 @@ int main(int argc, char* argv[]){
     if (my_rank == 0) {
         starttime = MPI_Wtime();
     }
-     // printf("%d: starting step:%i\n", my_rank, step);
+    printf("%d: starting step:%i\n", my_rank, step);
     for(int substep = 0; substep < subSteps; substep++){
       iterPos = l_pos;
-      // printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step);
+      printf("  %d: starting substep:%i step:%i\n", my_rank, substep, step);
       int rankOther = my_rank;
+      double startsubsteptime = MPI_Wtime();
       for(int iter = 0; iter < p; iter++){
-        // printf("    %d: starting substep:%i step:%i iter:%i\n", my_rank, substep, step, iter);
-        // printf("%d: going to process\n", my_rank);
-        //printVecArr(iterPos, maxBlockSize*3, my_rank, 3);
+        printf("    %d: starting substep:%i step:%i iter:%i\n", my_rank, substep, step, iter);
+        /* printf("%d: going to process\n", my_rank); */
+        /* printVecArr(iterPos, maxBlockSize*3, my_rank, 3); */
         //calculate(l_pos, iterPos, forces, rowDistributions[my_rank], my_rank);
         calculate(l_pos, iterPos, forces, rowDistributions[my_rank], my_rank, numParticles, rankOther, p);
         // printf("%d: after calculating print forces\n", my_rank);
@@ -606,22 +771,29 @@ int main(int argc, char* argv[]){
           }
         }
       }
-      // printf("%d: after done the iteration print forces\n", my_rank);
-      // printVecArr(forces, numParticles*maxBlockSize*2, my_rank,numParticles*2);
+      /* printf("%d: after done the iteration print forces\n", my_rank); */
+      /* printVecArr(forces, numParticles*maxBlockSize*2, my_rank,numParticles*2); */
 
       // printf("%d: starting sendForces\n", my_rank);
-      sendForces(forces, my_rank, p, numParticles, blockSize);
+      //printf("    %d: substep:%i step:%i starting dorcessubstepTime:%f\n", my_rank, substep, step, MPI_Wtime() - startsubsteptime);
+      double startforcesTime = MPI_Wtime();
+      sendForces2(forces, my_rank, p, numParticles, blockSize);
+      printf("    %d: done send forces substep:%i step:%i send forces time:%f\n", my_rank, substep, step, MPI_Wtime() - startforcesTime);
       // printf("%d: done sending forces\n", my_rank);
 
       // printf("%d: printing forces after send\n", my_rank);
       // printVecArr(forces, numParticles*maxBlockSize*2, my_rank,numParticles*2);
 
       // printf("%d: going to updatePosition\n", my_rank);
+      double startUpdatePos  = MPI_Wtime();
       updatePos(forces, l_pos, l_vel, width, height, numParticles, blockSize, timeSubStep);
+      printf("    %d: done updatePos substep:%i step:%i update pos time:%f\n", my_rank, substep, step, MPI_Wtime() - startUpdatePos);
       // printf("%d: done updatePos \n", my_rank);
       // printf("%d: done iteration\n", my_rank);
       //printf("%d: printing l_pos\n", my_rank);
       //printVecArr(l_pos, maxBlockSize*3, my_rank, 3);
+
+      printf("    %d: ending substep:%i step:%i substepTime:%f\n", my_rank, substep, step, MPI_Wtime() - startsubsteptime);
     }
 
     if (my_rank == 0) {
@@ -652,6 +824,7 @@ int main(int argc, char* argv[]){
       // send all the positions to process 0, do a gather
       // printf("post gather positions:\n");
       // printVecArr(positions, numParticles*3, my_rank,3);
+
       saveImage(filePrefix, step, positions, width, height, nLight,nMedium,nHeavy);
     }
   }
