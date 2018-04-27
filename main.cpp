@@ -619,7 +619,7 @@ void saveImage(char* filePrefix, int step, double* pos, int width, int height, i
   strcat(fileName, ".bmp");
 
   saveBMP(fileName, img, width, height);
-  //free(img);
+  free(img);
 }
 int main(int argc, char* argv[]){
   if( argc != 10){
