@@ -834,7 +834,8 @@ int main(int argc, char* argv[]){
   }
 
   if (my_rank == 0) {
-    aveTime = totalTime / (double) nSteps;
+    // divide by nSteps-1 because initial step requires no computation and is not timed
+    aveTime = totalTime / (double) (nSteps-1);
     printf("min:%.4f max:%.4f average:%.4f\n", minTime, maxTime, aveTime);
   }
 
