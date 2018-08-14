@@ -1,4 +1,4 @@
 # ParticleSimulator
 
 Example run:
-> mpirun -np 8 ./project.x 6000 3000 1000 900 50 0.5 1920 1080 simulation
+> mpirun -np 4 project.x 100 100 100 100 50 1 1920 1080 "out/img"
